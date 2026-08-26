@@ -1,0 +1,486 @@
+{
+  "name": "RAG Content Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        176
+      ],
+      "id": "f4087dc0-a64e-4046-a905-93391e70e38e",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "YpI8dPpXA4mOOebL",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -32,
+        -16
+      ],
+      "id": "6463711f-1dea-4ec2-88f5-822f591a1e6f",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7697c44f-92be-48d5-9326-8bc614c6927a",
+              "name": "topic",
+              "value": "Introduction to RAG",
+              "type": "string"
+            },
+            {
+              "id": "0ffccb2f-c04a-48bd-9abf-c53a96caa98f",
+              "name": "attempt",
+              "value": 1,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        160,
+        -16
+      ],
+      "id": "59b4c7fd-c2fb-4b4f-bbc2-cb954bad4bdb",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b6c01a3a-1bf0-4ccd-8e72-3a1d9f2875eb",
+              "name": "lesson",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "8d7a5296-cfcd-4f81-8d7f-e0bee59c00a6",
+              "name": "topic",
+              "value": "={{ $('Edit Fields').item.json.topic }}",
+              "type": "string"
+            },
+            {
+              "id": "e3df99e8-de17-4d6b-880b-a4d63528269c",
+              "name": "attempt",
+              "value": "={{ $('Prepare Regeneration').isExecuted ? $('Prepare Regeneration').item.json.attempt : $('Edit Fields').item.json.attempt }}",
+              "type": "number"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        688,
+        -16
+      ],
+      "id": "b5995628-8b1f-403b-abc7-43eae2cb9ef8",
+      "name": "Store Generated Lesson"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a strict quality evaluator for beginner educational content.\n\nYou are evaluating a lesson generated for this topic:\n\n{{ $('Store Generated Lesson').item.json.topic }}\n\nHere is the generated lesson:\n\n{{ $('Store Generated Lesson').item.json.lesson }}\n\nEvaluate the lesson using the following HARD PASS/FAIL checks.\n\nA check passes only when the requirement is clearly satisfied.\nDo not give partial credit.\n\nCHECK 1 — TOPIC ACCURACY\nThe lesson must correctly explain the requested topic and must not teach a different topic.\n\nCHECK 2 — BEGINNER FRIENDLY\nA learner who has only completed 12th grade and has no prior knowledge of the topic should be able to understand the lesson.\n\nCHECK 3 — KEY CONCEPTS\nThe lesson must explain:\n- what the topic is\n- why it matters\n- how it works\n\nCHECK 4 — EXAMPLES\nThe lesson must contain:\n- at least one simple real-world analogy\n- at least one concrete technical example\n\nCHECK 5 — JARGON\nImportant technical terms must be explained when first introduced.\nThe lesson must not depend on unexplained technical vocabulary.\n\nCHECK 6 — TEACHING FLOW\nThe lesson must move logically from basic ideas to more technical ideas.\n\nCHECK 7 — TECHNICAL ACCURACY\nThe lesson must not contain obvious technical errors, misleading explanations, or unsupported claims presented as facts.\n\nCHECK 8 — STANDALONE LESSON\nThe learner should be able to understand the lesson without needing another explanation or external material.\n\nReturn a result for EVERY check.\n\nThe overall result is PASS only if ALL checks pass.\n\nFor every failed check, explain:\n1. What failed.\n2. Why it failed.\n3. What should be changed during regeneration.\n\nReturn your evaluation in this exact JSON structure:\n\n{\n  \"overall_pass\": true,\n  \"checks\": [\n    {\n      \"id\": \"topic_accuracy\",\n      \"passed\": true,\n      \"reason\": \"\"\n    },\n    {\n      \"id\": \"beginner_friendly\",\n      \"passed\": true,\n      \"reason\": \"\"\n    },\n    {\n      \"id\": \"key_concepts\",\n      \"passed\": true,\n      \"reason\": \"\"\n    },\n    {\n      \"id\": \"examples\",\n      \"passed\": true,\n      \"reason\": \"\"\n    },\n    {\n      \"id\": \"jargon\",\n      \"passed\": true,\n      \"reason\": \"\"\n    },\n    {\n      \"id\": \"teaching_flow\",\n      \"passed\": true,\n      \"reason\": \"\"\n    },\n    {\n      \"id\": \"technical_accuracy\",\n      \"passed\": true,\n      \"reason\": \"\"\n    },\n    {\n      \"id\": \"standalone\",\n      \"passed\": true,\n      \"reason\": \"\"\n    }\n  ],\n  \"failed_checks\": [],\n  \"regeneration_feedback\": \"\"\n}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": []
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        912,
+        -16
+      ],
+      "id": "f503ad75-f831-43bd-bf75-47f23d8a0294",
+      "name": "Lesson Evaluator"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an expert instructional content creator for beginner learners in India.\n\nCreate a standalone beginner lesson about the topic provided below.\n\nLearner profile:\n- Recently completed 12th grade\n- Has no prior knowledge of the topic\n- Has limited English vocabulary\n- May not have an English-medium educational background\n- Wants to start learning AI\n\nTopic:\n{{ $json.topic }}\n\nAttempt:\n{{ $json.attempt || 1 }}\n\nPrevious evaluation feedback:\n{{ $json.feedback ? JSON.stringify($json.feedback) : \"No previous evaluation feedback. This is the first attempt.\" }}\n\nIf previous evaluation feedback is provided, carefully fix the issues identified by the evaluator while keeping the parts of the lesson that are already good.\n\nThe learner should be able to understand the topic from this lesson without needing another explanation.\n\nThe lesson must:\n1. Explain what the topic is in very simple language.\n2. Explain why the topic matters.\n3. Explain how it works step by step.\n4. Use at least one simple real-world analogy.\n5. Include at least one concrete technical example.\n6. Explain every necessary technical term before or when it is first used.\n7. Follow a clear teaching flow from simple concepts to more technical concepts.\n8. Avoid unnecessary jargon.\n9. Be technically accurate.\n10. End with a short recap of the key ideas.\n\nDo not assume the learner already knows programming, machine learning, embeddings, vector databases, APIs, or other AI terminology.\n\nWrite only the lesson content. Do not discuss these instructions.",
+        "messages": {
+          "messageValues": []
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        384,
+        -16
+      ],
+      "id": "eee89aca-cba7-4d64-9685-26eaac37be7c",
+      "name": "Generator"
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"overall_pass\": true,\n  \"checks\": [\n    {\n      \"id\": \"topic_accuracy\",\n      \"passed\": true,\n      \"reason\": \"\"\n    },\n    {\n      \"id\": \"beginner_friendly\",\n      \"passed\": true,\n      \"reason\": \"\"\n    },\n    {\n      \"id\": \"key_concepts\",\n      \"passed\": true,\n      \"reason\": \"\"\n    },\n    {\n      \"id\": \"examples\",\n      \"passed\": true,\n      \"reason\": \"\"\n    },\n    {\n      \"id\": \"jargon\",\n      \"passed\": true,\n      \"reason\": \"\"\n    },\n    {\n      \"id\": \"teaching_flow\",\n      \"passed\": true,\n      \"reason\": \"\"\n    },\n    {\n      \"id\": \"technical_accuracy\",\n      \"passed\": true,\n      \"reason\": \"\"\n    },\n    {\n      \"id\": \"standalone\",\n      \"passed\": true,\n      \"reason\": \"\"\n    }\n  ],\n  \"failed_checks\": [],\n  \"regeneration_feedback\": \"\"\n}",
+        "autoFix": true
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        976,
+        192
+      ],
+      "id": "a11a2f80-a1ed-4031-a795-a525cbc83e0c",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "fc8ec869-1aeb-4217-a8fa-5e2367c9b013",
+              "leftValue": "={{ $json.output.overall_pass }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1296,
+        -16
+      ],
+      "id": "bd03572d-3e11-4d38-bf2a-53d4df380afa",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "24298fca-e2e6-488c-bed8-1ad6680aeb4f",
+              "name": "status",
+              "value": "passed",
+              "type": "string"
+            },
+            {
+              "id": "0cbf7c76-abfa-46be-a673-08b446fee2bf",
+              "name": "lesson",
+              "value": "={{ $('Store Generated Lesson').item.json.lesson }}",
+              "type": "string"
+            },
+            {
+              "id": "77052cbe-a09a-4228-9482-1e6dff472790",
+              "name": "=attempt",
+              "value": "={{ $('Store Generated Lesson').item.json.attempt }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1600,
+        -112
+      ],
+      "id": "f4867837-ed02-4dcd-b6a8-169ec5d416ad",
+      "name": "Final Lesson"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3189b441-2a77-45e7-b6d2-33020d553baa",
+              "name": "topic",
+              "value": "={{ $('Edit Fields').item.json.topic }}",
+              "type": "string"
+            },
+            {
+              "id": "4fa4f6ce-b082-41f0-a27d-5079524be3c7",
+              "name": "attempt",
+              "value": "={{ $('Store Generated Lesson').item.json.attempt + 1 }}",
+              "type": "number"
+            },
+            {
+              "id": "a19029c1-be15-411e-8dd0-bf53cea94eb7",
+              "name": "feedback",
+              "value": "={{ $json }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1600,
+        224
+      ],
+      "id": "7bf1f9e5-c061-49ca-a769-2aafb62598d4",
+      "name": "Prepare Regeneration"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cab5886d-6ead-46d4-802c-138f73d17241",
+              "leftValue": "={{ $('Store Generated Lesson').item.json.attempt }}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1312,
+        224
+      ],
+      "id": "9b8639c6-11b5-4a94-813f-f5b5dc6e9a33",
+      "name": "Retry Limit"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cad4557c-eaf8-416e-889f-1f9437965aca",
+              "name": "status",
+              "value": "failed",
+              "type": "string"
+            },
+            {
+              "id": "f9f71fdf-a19f-4ec4-a923-ac3a72534403",
+              "name": "lesson",
+              "value": "={{ $('Store Generated Lesson').item.json.lesson }}",
+              "type": "string"
+            },
+            {
+              "id": "eb491f06-720f-494f-8481-0c7edd72d126",
+              "name": "attempt",
+              "value": "={{ $('Store Generated Lesson').item.json.attempt }}",
+              "type": "number"
+            },
+            {
+              "id": "6c2746eb-23d9-4b91-b920-8770d3423f0e",
+              "name": "failed_checks",
+              "value": "={{ $('Lesson Evaluator').item.json.output.failed_checks }}",
+              "type": "array"
+            },
+            {
+              "id": "2f9ee016-50db-4348-8307-1fa7bef72c37",
+              "name": "regeneration_feedback",
+              "value": "={{ $('Lesson Evaluator').item.json.output.regeneration_feedback }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1600,
+        48
+      ],
+      "id": "b6b1b3e4-9c14-466a-b826-4a80826c7a02",
+      "name": "Failed Final Lesson"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generator",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Lesson Evaluator",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Structured Output Parser",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Generated Lesson": {
+      "main": [
+        [
+          {
+            "node": "Lesson Evaluator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generator": {
+      "main": [
+        [
+          {
+            "node": "Store Generated Lesson",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Lesson Evaluator",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lesson Evaluator": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Final Lesson",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retry Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Regeneration": {
+      "main": [
+        [
+          {
+            "node": "Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry Limit": {
+      "main": [
+        [
+          {
+            "node": "Prepare Regeneration",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failed Final Lesson",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "c51336dd-2cbc-4570-96bc-263812f78e7e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "21f50d14190b2ca92517f83ad9ba515969e3292118f19e43480e9d744fa7dba5"
+  },
+  "nodeGroups": [],
+  "id": "dYPLQns6syetQYVj",
+  "tags": []
+}
