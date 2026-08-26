@@ -524,7 +524,7 @@ The primary model used during development and workflow execution was:
 Gemini 3.6 Flash
 ```
 
-**Gemini 3.5 Flash** was used only for final verification of the workflow and demonstration video after the Gemini 3.6 Flash quota was exceeded.
+**Gemini 3.5 Flash Lite** was used only for final verification of the workflow and demonstration video after the Gemini 3.6 Flash quota was exceeded.
 
 The workflow requires the user importing it to configure their own Gemini credential.
 
@@ -646,7 +646,7 @@ For the terminal failure demonstration, the temporary evaluator testing instruct
 
 All temporary **DEMO ONLY / TESTING ONLY instructions** are removed from the final workflow.
 
-The final workflow and video were verified using Gemini 3.5 Flash after the Gemini 3.6 Flash quota was exceeded.
+The final workflow and video were verified using Gemini 3.5 Flash Lite after the Gemini 3.6 Flash quota was exceeded.
 
 ---
 
