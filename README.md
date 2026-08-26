@@ -191,7 +191,7 @@ Then, in n8n:
 5. Open **Google Gemini Chat Model** in the workflow.
 6. Select your newly created credential.
 
-Primary model used during development: **Gemini 3.6 Flash & Gemini 3.5 Flash**
+Primary model used during development: **Gemini 3.6 Flash & Gemini 3.5 Flash Lite**
 
 ## 4. Set the topic
 
