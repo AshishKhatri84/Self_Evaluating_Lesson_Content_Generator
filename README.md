@@ -36,7 +36,7 @@ https://docs.google.com/document/d/1Irfxobxdl_lX7-jR5G0Zx-UvvOBNYfG9/edit?usp=sh
 
 The document contains the accepted final lesson output, rather than the `Failed Final Lesson` fallback.
 
-# Note: The document is also uploaded to the repo as **Final Lesson Output.docx**.
+### Note: The document is also uploaded to the repo as **Final Lesson Output.docx**.
 
 ## 3. Video
 
