@@ -31,7 +31,9 @@ import {
   RefreshCw,
   Zap,
   ShieldAlert,
-  GitCompare
+  GitCompare,
+  Download,
+  ChevronDown
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -131,7 +133,7 @@ const RUBRIC_DETAILS = [
 ];
 
 export default function App() {
-  const [topic, setTopic] = useState('Introduction to RAG');
+  const [topic, setTopic] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [currentStepText, setCurrentStepText] = useState('Initializing...');
   
@@ -142,6 +144,7 @@ export default function App() {
   const [selectedAttemptIndex, setSelectedAttemptIndex] = useState(0);
   const [compareBaseIndex, setCompareBaseIndex] = useState(0);
   const [compareTargetIndex, setCompareTargetIndex] = useState(1);
+  const [compareExportOpen, setCompareExportOpen] = useState(false);
 
   const currentAttempt = runResult?.iterations[selectedAttemptIndex] || runResult?.iterations[0];
   const activeLesson = currentAttempt?.lesson || runResult?.finalLesson || '';
@@ -252,7 +255,8 @@ export default function App() {
     }
   ];
 
-  const triggerExecution = async (customTopic?: string) => {
+  const triggerExecution = async (customTopic?: string, overrideScenarioMode?: 'auto' | 'self_correction' | 'retry_limit') => {
+    const activeScenario = overrideScenarioMode || scenarioMode;
     const topicToRun = customTopic || topic;
     if (!topicToRun.trim()) return;
 
@@ -260,7 +264,7 @@ export default function App() {
     setQuotaExhaustedNotice(null);
     setCurrentStepText('Generating initial beginner lesson with 12th-grade pedagogical profile...');
 
-    const steps = scenarioMode === 'self_correction'
+    const steps = activeScenario === 'self_correction'
       ? [
           'Drafting initial lesson (with natural first-draft pedagogical flaws)...',
           'Storing Attempt 1 draft & handing to strict Lesson Evaluator...',
@@ -268,7 +272,7 @@ export default function App() {
           'Passing evaluator critique into Generator for Attempt 2 self-correction...',
           'Finalizing accepted lesson & verified audit report...'
         ]
-      : scenarioMode === 'retry_limit'
+      : activeScenario === 'retry_limit'
       ? [
           'Executing Attempt 1 under advanced academic constraints...',
           'Evaluator rejecting Attempt 1 & routing to Prepare Regeneration...',
@@ -303,7 +307,7 @@ export default function App() {
         body: JSON.stringify({
           topic: topicToRun,
           customApiKey: customApiKey || undefined,
-          scenarioMode
+          scenarioMode: activeScenario
         }),
       });
 
@@ -347,6 +351,14 @@ export default function App() {
     } finally {
       setIsRunning(false);
       setCurrentStepText('Execution complete');
+    }
+  };
+
+  const handleSelectTestScenario = (mode: 'self_correction' | 'retry_limit') => {
+    setScenarioMode(mode);
+    const generatorStation = document.getElementById('generator-station');
+    if (generatorStation) {
+      generatorStation.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
 
@@ -564,6 +576,262 @@ export default function App() {
     doc.save(`${runResult.topic.replace(/\s+/g, '_')}_Attempt${currentAttempt?.attempt || 1}_Lesson.pdf`);
   };
 
+  // Download side-by-side comparison of 2 attempts (Text, Word, or PDF)
+  const exportComparison = (format: 'txt' | 'doc' | 'pdf' = 'txt') => {
+    if (!runResult || runResult.iterations.length < 2) return;
+    const base = runResult.iterations[compareBaseIndex];
+    const target = runResult.iterations[compareTargetIndex];
+    if (!base || !target) return;
+
+    const baseStatus = base.passed ? 'PASSED 8/8 CHECKS' : 'FAILED AUDIT (CRITIQUE GENERATED)';
+    const targetStatus = target.passed ? 'PASSED 8/8 CHECKS' : 'FAILED AUDIT (CRITIQUE GENERATED)';
+
+    if (format === 'txt') {
+      const content = `================================================================================
+SELF-EVALUATING LESSON CONTENT GENERATOR: COMPARISON REPORT
+Topic: ${runResult.topic}
+Comparison: Attempt ${base.attempt} vs Attempt ${target.attempt}
+Audit Date: ${new Date().toLocaleDateString()}
+Workflow Result: ${runResult.status.toUpperCase()} (Total Attempts: ${runResult.attemptsCount}, Terminal Node: ${runResult.terminalNode})
+================================================================================
+
+COMPARISON OVERVIEW:
+- Draft A: Attempt ${base.attempt} — Status: ${baseStatus}
+- Draft B: Attempt ${target.attempt} — Status: ${targetStatus}
+
+${!base.passed ? `CRITIQUE ON ATTEMPT ${base.attempt}:
+${base.evaluation.regeneration_feedback}
+Failed Checks: ${base.evaluation.failed_checks.map(c => RUBRIC_TITLES[c] || c).join(', ')}` : `ATTEMPT ${base.attempt}: All 8 rubric criteria satisfied.`}
+
+${target.passed ? `ATTEMPT ${target.attempt} RESOLUTION:
+Attempt ${target.attempt} successfully satisfied all 8 evaluation criteria, addressing previous feedback.` : `ATTEMPT ${target.attempt} STATUS:
+${target.evaluation.regeneration_feedback}
+Failed Checks: ${target.evaluation.failed_checks.map(c => RUBRIC_TITLES[c] || c).join(', ')}`}
+
+================================================================================
+DRAFT A: ATTEMPT ${base.attempt}
+================================================================================
+
+${base.lesson}
+
+================================================================================
+DRAFT B: ATTEMPT ${target.attempt}
+================================================================================
+
+${target.lesson}
+
+================================================================================
+RUBRIC CHECKS BREAKDOWN:
+Attempt ${base.attempt}:
+${base.evaluation.checks.map(c => `  - [${c.passed ? 'PASS' : 'FAIL'}] ${RUBRIC_TITLES[c.id] || c.id}: ${c.reason}`).join('\n')}
+
+Attempt ${target.attempt}:
+${target.evaluation.checks.map(c => `  - [${c.passed ? 'PASS' : 'FAIL'}] ${RUBRIC_TITLES[c.id] || c.id}: ${c.reason}`).join('\n')}
+================================================================================
+Generated by Self-Evaluating Lesson Content Generator • Agentic Workflow Loop
+`;
+
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${runResult.topic.replace(/\s+/g, '_')}_Comparison_Attempt${base.attempt}_vs_Attempt${target.attempt}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else if (format === 'doc') {
+      const htmlContent = `
+        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+        <head>
+          <meta charset="utf-8">
+          <title>${runResult.topic} - Comparison: Attempt ${base.attempt} vs Attempt ${target.attempt}</title>
+          <style>
+            body { font-family: 'Calibri', 'Segoe UI', Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #222; margin: 30px; }
+            h1 { color: #8C4A00; font-size: 18pt; border-bottom: 2px solid #E6D5C3; padding-bottom: 6px; }
+            h2 { color: #9E5300; font-size: 13pt; margin-top: 18px; }
+            .meta-box { background-color: #FAF8F5; border: 1px solid #E2D9CF; padding: 12px; border-radius: 6px; margin-bottom: 18px; }
+            .badge-pass { background-color: #D1FAE5; color: #065F46; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 9pt; }
+            .badge-fail { background-color: #FEF3C7; color: #92400E; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 9pt; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 20px; }
+            th { background-color: #F3ECE2; border: 1px solid #D6C8B8; padding: 8px; text-align: left; font-size: 10.5pt; }
+            td { border: 1px solid #E2D9CF; padding: 12px; vertical-align: top; font-size: 10pt; line-height: 1.5; }
+            .critique-box { background-color: #FEF9C3; border-left: 4px solid #F59E0B; padding: 10px; margin: 10px 0; font-size: 10pt; }
+            .footer { font-size: 9pt; color: #888; border-top: 1px solid #EEE; margin-top: 25px; padding-top: 8px; }
+          </style>
+        </head>
+        <body>
+          <h1>${runResult.topic} — Draft Comparison Report</h1>
+          <div class="meta-box">
+            <p><strong>Compared Iterations:</strong> Attempt ${base.attempt} vs Attempt ${target.attempt}</p>
+            <p><strong>Attempt ${base.attempt} Status:</strong> <span class="${base.passed ? 'badge-pass' : 'badge-fail'}">${baseStatus}</span></p>
+            <p><strong>Attempt ${target.attempt} Status:</strong> <span class="${target.passed ? 'badge-pass' : 'badge-fail'}">${targetStatus}</span></p>
+            <p><strong>Overall Workflow Status:</strong> ${runResult.status.toUpperCase()} (Total attempts: ${runResult.attemptsCount})</p>
+          </div>
+
+          ${!base.passed ? `
+            <div class="critique-box">
+              <strong>Evaluator Critique on Attempt ${base.attempt}:</strong><br />
+              ${base.evaluation.regeneration_feedback}
+            </div>
+          ` : ''}
+
+          <h2>Drafts Side-by-Side Comparison</h2>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 50%;">Attempt ${base.attempt} (${base.passed ? 'PASSED' : 'REJECTED'})</th>
+                <th style="width: 50%;">Attempt ${target.attempt} (${target.passed ? 'PASSED' : 'REJECTED'})</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  ${base.lesson
+                    .replace(/\n\n/g, '<p></p>')
+                    .replace(/\n- (.*)/g, '<li>$1</li>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}
+                </td>
+                <td>
+                  ${target.lesson
+                    .replace(/\n\n/g, '<p></p>')
+                    .replace(/\n- (.*)/g, '<li>$1</li>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="footer">
+            Generated & Verified via Self-Evaluating Lesson Content Generator • Agentic Workflow Loop
+          </div>
+        </body>
+        </html>
+      `;
+      const blob = new Blob([htmlContent], { type: 'application/msword' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${runResult.topic.replace(/\s+/g, '_')}_Comparison_Attempt${base.attempt}_vs_Attempt${target.attempt}.doc`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else if (format === 'pdf') {
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 40;
+      const maxLineWidth = pageWidth - margin * 2;
+      let cursorY = 45;
+
+      // Title
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.setTextColor(140, 74, 0);
+      doc.text(`${runResult.topic} — Comparison Report`, margin, cursorY);
+      cursorY += 20;
+
+      // Subtitle
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      doc.text(`Comparing: Attempt ${base.attempt} (${baseStatus}) vs Attempt ${target.attempt} (${targetStatus})`, margin, cursorY);
+      cursorY += 15;
+
+      doc.setDrawColor(220, 210, 200);
+      doc.setLineWidth(1);
+      doc.line(margin, cursorY, pageWidth - margin, cursorY);
+      cursorY += 16;
+
+      // Critique box if base failed
+      if (!base.passed) {
+        doc.setFillColor(254, 243, 199);
+        doc.setDrawColor(245, 158, 11);
+        doc.roundedRect(margin, cursorY, maxLineWidth, 38, 4, 4, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(146, 64, 14);
+        doc.text(`Evaluator Critique on Attempt ${base.attempt}:`, margin + 8, cursorY + 14);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        const feedbackLines = doc.splitTextToSize(base.evaluation.regeneration_feedback, maxLineWidth - 16);
+        doc.text(feedbackLines, margin + 8, cursorY + 26);
+        cursorY += 46;
+      }
+
+      const renderAttemptSection = (attemptIter: typeof base, label: string) => {
+        if (cursorY > pageHeight - 80) {
+          doc.addPage();
+          cursorY = 45;
+        }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.setTextColor(160, 82, 45);
+        doc.text(label, margin, cursorY);
+        cursorY += 18;
+
+        const lines = attemptIter.lesson.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) {
+            cursorY += 6;
+            continue;
+          }
+          if (cursorY > pageHeight - 50) {
+            doc.addPage();
+            cursorY = 45;
+          }
+          if (trimmed.startsWith('# ')) {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(12);
+            doc.setTextColor(140, 74, 0);
+            const wrapped = doc.splitTextToSize(trimmed.replace(/^#\s+/, ''), maxLineWidth);
+            doc.text(wrapped, margin, cursorY);
+            cursorY += wrapped.length * 15 + 4;
+          } else if (trimmed.startsWith('## ')) {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(11);
+            doc.setTextColor(160, 82, 45);
+            const wrapped = doc.splitTextToSize(trimmed.replace(/^##\s+/, ''), maxLineWidth);
+            doc.text(wrapped, margin, cursorY);
+            cursorY += wrapped.length * 14 + 3;
+          } else if (trimmed.startsWith('- ')) {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(40, 40, 40);
+            const bulletText = `• ${trimmed.replace(/^-\s+/, '')}`;
+            const wrapped = doc.splitTextToSize(bulletText, maxLineWidth - 10);
+            doc.text(wrapped, margin + 10, cursorY);
+            cursorY += wrapped.length * 12 + 2;
+          } else {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(40, 40, 40);
+            const wrapped = doc.splitTextToSize(trimmed, maxLineWidth);
+            doc.text(wrapped, margin, cursorY);
+            cursorY += wrapped.length * 12 + 4;
+          }
+        }
+      };
+
+      renderAttemptSection(base, `Draft A — Attempt ${base.attempt} (${base.passed ? 'PASSED' : 'FAILED AUDIT'})`);
+      cursorY += 15;
+      renderAttemptSection(target, `Draft B — Attempt ${target.attempt} (${target.passed ? 'PASSED' : 'FAILED AUDIT'})`);
+
+      const pageCount = (doc as any).internal.getNumberOfPages();
+      for (let p = 1; p <= pageCount; p++) {
+        doc.setPage(p);
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(8);
+        doc.setTextColor(140, 140, 140);
+        doc.text(
+          `Self-Evaluating Lesson Content Generator · Comparison Report · Page ${p} of ${pageCount}`,
+          margin,
+          pageHeight - 20
+        );
+      }
+
+      doc.save(`${runResult.topic.replace(/\s+/g, '_')}_Comparison_Attempt${base.attempt}_vs_Attempt${target.attempt}.pdf`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-stone-900 flex flex-col selection:bg-amber-100 selection:text-amber-900">
       {/* Top Header */}
@@ -679,7 +947,7 @@ export default function App() {
         </section>
 
         {/* The Generator Station (Focused, Single Action) */}
-        <section className="bg-white border border-stone-200/90 rounded-3xl p-6 sm:p-8 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
+        <section id="generator-station" className="bg-white border border-stone-200/90 rounded-3xl p-6 sm:p-8 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
           {/* Subtle Warm Gradient Bar at Top */}
           <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500"></div>
 
@@ -744,74 +1012,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Workflow Scenario & Test Mode Selector */}
-            <div className="space-y-2 pt-1 border-t border-stone-100">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-semibold uppercase tracking-wider text-stone-700">
-                  Workflow Execution Mode:
-                </label>
-                <span className="text-[11px] text-stone-400">Test agentic feedback loops & safeguards</span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setScenarioMode('auto')}
-                  disabled={isRunning}
-                  className={`p-3 rounded-2xl border text-left transition-all ${
-                    scenarioMode === 'auto'
-                      ? 'bg-amber-50/90 border-amber-500 ring-2 ring-amber-400/50 shadow-xs'
-                      : 'bg-[#FAF8F5] hover:bg-stone-50 border-stone-200 text-stone-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 font-semibold text-xs text-amber-950">
-                    <Zap className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span>⚡ Standard Autonomous Run</span>
-                  </div>
-                  <p className="text-[11px] text-stone-600 mt-1 leading-snug">
-                    Natural authoring. Evaluator audits all 8 criteria strictly and triggers self-correction if any flaw arises.
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setScenarioMode('self_correction')}
-                  disabled={isRunning}
-                  className={`p-3 rounded-2xl border text-left transition-all ${
-                    scenarioMode === 'self_correction'
-                      ? 'bg-amber-50/90 border-amber-500 ring-2 ring-amber-400/50 shadow-xs'
-                      : 'bg-[#FAF8F5] hover:bg-stone-50 border-stone-200 text-stone-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 font-semibold text-xs text-amber-950">
-                    <RotateCcw className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span>🔄 Test Self-Correction Loop</span>
-                  </div>
-                  <p className="text-[11px] text-stone-600 mt-1 leading-snug">
-                    Attempt 1 drafts with realistic flaws (unexplained jargon, missing non-tech analogy). Evaluator catches them & Attempt 2 fixes them!
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setScenarioMode('retry_limit')}
-                  disabled={isRunning}
-                  className={`p-3 rounded-2xl border text-left transition-all ${
-                    scenarioMode === 'retry_limit'
-                      ? 'bg-rose-50/90 border-rose-500 ring-2 ring-rose-400/50 shadow-xs'
-                      : 'bg-[#FAF8F5] hover:bg-stone-50 border-stone-200 text-stone-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 font-semibold text-xs text-rose-950">
-                    <ShieldAlert className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                    <span>⚠️ Test Retry Safeguard</span>
-                  </div>
-                  <p className="text-[11px] text-stone-600 mt-1 leading-snug">
-                    Simulates persistent university-level barriers over 3 attempts, routing to "Failed Final Lesson" with diagnostic report.
-                  </p>
-                </button>
-              </div>
-            </div>
-
             {/* Quota & Model Transparency Notice */}
             <div className="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-900">
               <div className="flex items-start gap-2">
@@ -832,35 +1032,72 @@ export default function App() {
               </button>
             </div>
 
-            {/* Primary Action Button */}
-            <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-stone-100">
+            {/* Primary Action Button Bar with Scenario Badge */}
+            <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-t border-stone-100">
               <div className="flex items-center gap-2 text-xs text-stone-500">
                 <GraduationCap className="w-4 h-4 text-amber-700 shrink-0" />
                 <span>Outputs complete standalone educational document with recap & glossary.</span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => triggerExecution()}
-                disabled={isRunning || !topic.trim()}
-                className={`w-full sm:w-auto px-7 py-3.5 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2.5 shadow-sm transition-all ${
-                  isRunning || !topic.trim()
-                    ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white shadow-amber-700/15 active:scale-98'
-                }`}
-              >
-                {isRunning ? (
-                  <>
-                    <RotateCcw className="w-4 h-4 animate-spin text-amber-200" />
-                    <span>Running Workflow...</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 fill-white" />
-                    <span>Generate & Evaluate Lesson</span>
-                  </>
-                )}
-              </button>
+              <div className="flex flex-col sm:items-end gap-1.5 w-full sm:w-auto">
+                {/* Badge with the name of the test scenario selected */}
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="text-[11px] text-stone-500 font-medium">Selected Scenario:</span>
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
+                      scenarioMode === 'self_correction'
+                        ? 'bg-amber-100 text-amber-900 border-amber-300'
+                        : scenarioMode === 'retry_limit'
+                        ? 'bg-rose-100 text-rose-900 border-rose-300'
+                        : 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                    }`}
+                  >
+                    {scenarioMode === 'self_correction' && <RotateCcw className="w-3.5 h-3.5 text-amber-700" />}
+                    {scenarioMode === 'retry_limit' && <ShieldAlert className="w-3.5 h-3.5 text-rose-700" />}
+                    {scenarioMode === 'auto' && <Zap className="w-3.5 h-3.5 text-emerald-600" />}
+                    <span>
+                      {scenarioMode === 'self_correction'
+                        ? 'Test Self-Correction Loop'
+                        : scenarioMode === 'retry_limit'
+                        ? 'Test Retry Safeguard'
+                        : 'Standard Autonomous Run'}
+                    </span>
+                    {scenarioMode !== 'auto' && (
+                      <button
+                        type="button"
+                        onClick={() => setScenarioMode('auto')}
+                        className="ml-1 text-stone-400 hover:text-stone-700 font-bold"
+                        title="Reset to Standard Autonomous Run"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => triggerExecution()}
+                  disabled={isRunning || !topic.trim()}
+                  className={`w-full sm:w-auto px-7 py-3.5 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2.5 shadow-sm transition-all ${
+                    isRunning || !topic.trim()
+                      ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white shadow-amber-700/15 active:scale-98'
+                  }`}
+                >
+                  {isRunning ? (
+                    <>
+                      <RotateCcw className="w-4 h-4 animate-spin text-amber-200" />
+                      <span>Running Workflow...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 fill-white" />
+                      <span>Generate & Evaluate Lesson</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* Live Progress Bar when Running */}
@@ -962,6 +1199,138 @@ export default function App() {
                 </p>
               </div>
               <div className="text-[11px] font-mono text-stone-400">Bounded Retry Guard</div>
+            </div>
+          </div>
+        </section>
+
+        {/* Section: Workflow Execution Scenarios */}
+        <section id="workflow-scenarios" className="bg-white border border-stone-200/90 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
+          <div className="max-w-2xl space-y-1">
+            <h2 className="font-display text-2xl font-semibold text-stone-900">
+              Workflow Execution Scenarios
+            </h2>
+            <p className="text-xs sm:text-sm text-stone-600">
+              Observe how the autonomous evaluator handles flawed initial drafts and enforces loop termination.
+            </p>
+          </div>
+
+          {/* 1. Explanations: 2 Grids Side by Side */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            {/* Scenario 1 Explanation Card */}
+            <div className="p-5 rounded-2xl bg-[#FAF8F5] border border-amber-200/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-amber-100 text-amber-800">
+                    <RotateCcw className="w-4 h-4" />
+                  </div>
+                  <h3 className="font-bold text-stone-900 text-sm">Self-Correction Loop Scenario</h3>
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100/90 text-amber-900 border border-amber-300">
+                  Attempt 1 ➔ Attempt 2
+                </span>
+              </div>
+              <p className="text-stone-600 leading-relaxed">
+                <strong className="text-stone-800">What happens:</strong> The initial draft intentionally exhibits realistic pedagogical flaws — such as missing non-technical real-world analogies or introducing unexplained technical jargon.
+              </p>
+              <div className="p-3 bg-white rounded-xl border border-stone-200/70 space-y-1">
+                <div className="font-semibold text-stone-800 text-[11px] flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Evaluator Action & Recovery:</span>
+                </div>
+                <p className="text-stone-600 text-[11px] leading-snug">
+                  The evaluator catches the missing criteria during the 8-point audit, rejects Attempt 1, and synthesizes actionable feedback. Attempt 2 addresses every critique, introduces relatable analogies, demystifies jargon, and passes.
+                </p>
+              </div>
+            </div>
+
+            {/* Scenario 2 Explanation Card */}
+            <div className="p-5 rounded-2xl bg-[#FAF8F5] border border-rose-200/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-rose-100 text-rose-800">
+                    <ShieldAlert className="w-4 h-4" />
+                  </div>
+                  <h3 className="font-bold text-stone-900 text-sm">Retry Safeguard Scenario</h3>
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-rose-100/90 text-rose-900 border border-rose-300">
+                  Max 3 Retries (attempt &lt; 3)
+                </span>
+              </div>
+              <p className="text-stone-600 leading-relaxed">
+                <strong className="text-stone-800">What happens:</strong> Simulates persistent university-level academic framing or excessive technical complexity that continually fails the 12th-grade beginner threshold across retries.
+              </p>
+              <div className="p-3 bg-white rounded-xl border border-stone-200/70 space-y-1">
+                <div className="font-semibold text-stone-800 text-[11px] flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Loop Brake & Terminal Fallback:</span>
+                </div>
+                <p className="text-stone-600 text-[11px] leading-snug">
+                  To protect against infinite loops or runaway API calls, the bounded retry guard trips once the attempt counter reaches 3, cleanly routing the execution to <code className="text-rose-900 bg-rose-50 px-1 py-0.5 rounded font-mono">Failed Final Lesson</code> with a full diagnostic audit.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Moved Component: Test Scenarios */}
+          <div className="space-y-2 pt-3 border-t border-stone-100">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-stone-700">
+                Test Scenarios
+              </label>
+              <span className="text-[11px] text-stone-400">Click to select scenario, then generate lesson in the main box above</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => handleSelectTestScenario('self_correction')}
+                disabled={isRunning}
+                className={`p-3.5 rounded-2xl border text-left transition-all ${
+                  scenarioMode === 'self_correction'
+                    ? 'bg-amber-50/90 border-amber-500 ring-2 ring-amber-400/50 shadow-xs'
+                    : 'bg-[#FAF8F5] hover:bg-stone-50 border-stone-200 text-stone-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-semibold text-xs text-amber-950">
+                    <RotateCcw className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>Test Self-Correction Loop</span>
+                  </div>
+                  {scenarioMode === 'self_correction' && (
+                    <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                      Selected
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-stone-600 mt-1.5 leading-snug">
+                  Attempt 1 drafts with realistic flaws (unexplained jargon, missing non-tech analogy). Evaluator catches them & Attempt 2 fixes them!
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectTestScenario('retry_limit')}
+                disabled={isRunning}
+                className={`p-3.5 rounded-2xl border text-left transition-all ${
+                  scenarioMode === 'retry_limit'
+                    ? 'bg-rose-50/90 border-rose-500 ring-2 ring-rose-400/50 shadow-xs'
+                    : 'bg-[#FAF8F5] hover:bg-stone-50 border-stone-200 text-stone-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-semibold text-xs text-rose-950">
+                    <ShieldAlert className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                    <span>Test Retry Safeguard</span>
+                  </div>
+                  {scenarioMode === 'retry_limit' && (
+                    <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full">
+                      Selected
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-stone-600 mt-1.5 leading-snug">
+                  Simulates persistent university-level barriers over 3 attempts, routing to "Failed Final Lesson" with diagnostic report.
+                </p>
+              </button>
             </div>
           </div>
         </section>
@@ -1322,6 +1691,65 @@ export default function App() {
                           ))}
                         </select>
                       </div>
+
+                      {/* Download Comparison Button on Right */}
+                      <div className="relative inline-flex items-center ml-1">
+                        <button
+                          type="button"
+                          onClick={() => exportComparison('txt')}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-l-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs transition-colors shadow-2xs cursor-pointer"
+                          title="Download comparison report as Text / Markdown"
+                        >
+                          <Download className="w-3.5 h-3.5 text-white" />
+                          <span>Download Comparison</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCompareExportOpen(!compareExportOpen)}
+                          className="px-2 py-1.5 rounded-r-xl bg-amber-700 hover:bg-amber-800 border-l border-amber-500/60 text-white font-semibold text-xs transition-colors shadow-2xs cursor-pointer"
+                          title="Choose export format"
+                        >
+                          <ChevronDown className="w-3.5 h-3.5 text-white" />
+                        </button>
+
+                        {compareExportOpen && (
+                          <div className="absolute right-0 top-full mt-1.5 w-48 bg-white border border-stone-200 rounded-xl shadow-lg z-30 py-1 text-stone-800 text-xs">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                exportComparison('txt');
+                                setCompareExportOpen(false);
+                              }}
+                              className="w-full text-left px-3.5 py-2 hover:bg-amber-50 flex items-center gap-2 text-stone-700 font-medium cursor-pointer"
+                            >
+                              <FileCode className="w-3.5 h-3.5 text-stone-500" />
+                              <span>Text / Markdown (.txt)</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                exportComparison('doc');
+                                setCompareExportOpen(false);
+                              }}
+                              className="w-full text-left px-3.5 py-2 hover:bg-amber-50 flex items-center gap-2 text-stone-700 font-medium cursor-pointer"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-blue-600" />
+                              <span>Word Document (.doc)</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                exportComparison('pdf');
+                                setCompareExportOpen(false);
+                              }}
+                              className="w-full text-left px-3.5 py-2 hover:bg-amber-50 flex items-center gap-2 text-stone-700 font-medium cursor-pointer"
+                            >
+                              <Printer className="w-3.5 h-3.5 text-amber-700" />
+                              <span>PDF Document (.pdf)</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1547,45 +1975,81 @@ export default function App() {
 
               {/* Export / Download Buttons */}
               <div className="flex flex-wrap items-center gap-2">
-                {/* Copy Text */}
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
-                >
-                  {copyStatus ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copyStatus ? 'Copied' : 'Copy'}</span>
-                </button>
+                {modalTab === 'compare' && runResult.iterations.length > 1 ? (
+                  <>
+                    {/* Compare Text (.txt) */}
+                    <button
+                      type="button"
+                      onClick={() => exportComparison('txt')}
+                      className="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                    >
+                      <FileCode className="w-3.5 h-3.5 text-stone-500" />
+                      <span>Compare Text (.txt)</span>
+                    </button>
 
-                {/* Download as Text */}
-                <button
-                  type="button"
-                  onClick={exportAsText}
-                  className="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
-                >
-                  <FileCode className="w-3.5 h-3.5 text-stone-500" />
-                  <span>Text (.txt)</span>
-                </button>
+                    {/* Compare Word (.doc) */}
+                    <button
+                      type="button"
+                      onClick={() => exportComparison('doc')}
+                      className="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Compare Word (.doc)</span>
+                    </button>
 
-                {/* Download as Word */}
-                <button
-                  type="button"
-                  onClick={exportAsWord}
-                  className="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
-                >
-                  <FileText className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Word (.doc)</span>
-                </button>
+                    {/* Compare PDF */}
+                    <button
+                      type="button"
+                      onClick={() => exportComparison('pdf')}
+                      className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5 text-white" />
+                      <span>Download Comparison</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {/* Copy Text */}
+                    <button
+                      type="button"
+                      onClick={handleCopy}
+                      className="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                    >
+                      {copyStatus ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copyStatus ? 'Copied' : 'Copy'}</span>
+                    </button>
 
-                {/* Direct Download as PDF via jsPDF */}
-                <button
-                  type="button"
-                  onClick={exportAsPdf}
-                  className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>Download PDF</span>
-                </button>
+                    {/* Download as Text */}
+                    <button
+                      type="button"
+                      onClick={exportAsText}
+                      className="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                    >
+                      <FileCode className="w-3.5 h-3.5 text-stone-500" />
+                      <span>Text (.txt)</span>
+                    </button>
+
+                    {/* Download as Word */}
+                    <button
+                      type="button"
+                      onClick={exportAsWord}
+                      className="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Word (.doc)</span>
+                    </button>
+
+                    {/* Direct Download as PDF via jsPDF */}
+                    <button
+                      type="button"
+                      onClick={exportAsPdf}
+                      className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>Download PDF</span>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 

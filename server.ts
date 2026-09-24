@@ -183,7 +183,7 @@ export const RUBRIC_CHECKS = [
   },
 ];
 
-// Multi-model resilience helper: handles temporary 503 high-demand spikes by falling back to 3.6-flash and 3.5-flash-lite
+// Multi-model resilience helper: prioritizes active Gemini 3.x models with model-to-model fallback
 async function callGeminiWithFallback(
   ai: GoogleGenAI,
   options: {
@@ -191,7 +191,7 @@ async function callGeminiWithFallback(
     config?: any;
   }
 ): Promise<{ text: string; modelUsed: string }> {
-  const models = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+  const models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.8-flash'];
   let lastError: any = null;
 
   for (const model of models) {
@@ -206,11 +206,8 @@ async function callGeminiWithFallback(
       lastError = err;
       const errorMsg = String(err?.message || err);
 
-      // Auth and Quota errors should fail fast without trying other models on the same invalid key/quota
+      // Auth errors should fail fast without trying other models on the same invalid key
       if (
-        errorMsg.includes('429') ||
-        errorMsg.includes('RESOURCE_EXHAUSTED') ||
-        errorMsg.includes('quota') ||
         errorMsg.includes('API_KEY_INVALID') ||
         errorMsg.includes('403') ||
         errorMsg.includes('unauthorized')
@@ -218,8 +215,8 @@ async function callGeminiWithFallback(
         throw err;
       }
 
-      // If temporary 503 (model experiencing high demand), try next fallback model
-      console.warn(`[Gemini] ${model} unavailable (${errorMsg.slice(0, 120)}). Trying fallback...`);
+      // If a model hits quota (429) or high demand (503/404), log and try next available model in list
+      console.warn(`[Gemini] ${model} unavailable (${errorMsg.slice(0, 100)}). Trying next fallback model...`);
     }
   }
 
@@ -539,19 +536,19 @@ Write only the final lesson text in clean Markdown.`;
       contents: prompt,
     });
 
-    return text || getOfflineLessonForScenario(topic, attempt, scenarioMode);
+    if (!text) {
+      throw new Error('No content returned from AI model.');
+    }
+    return text;
   } catch (err: any) {
     const errorMsg = String(err?.message || err);
     console.error('[Generator error]:', errorMsg);
-    if (scenarioMode !== 'auto') {
-      return getOfflineLessonForScenario(topic, attempt, scenarioMode);
-    }
     if (errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('quota')) {
       const quotaErr = new Error('GEMINI_QUOTA_EXHAUSTED');
       (quotaErr as any).isQuota = true;
       throw quotaErr;
     }
-    return getOfflineTopicLesson(topic);
+    throw err;
   }
 }
 
