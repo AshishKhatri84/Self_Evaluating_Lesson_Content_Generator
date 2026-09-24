@@ -312,38 +312,32 @@ Open `http://localhost:3000` in your browser. You can enter any topic, select te
 
 ---
 
-## Updated Output & Export Formats
+## Output & Export Formats (Web Application)
 
-### 1. Terminal Node JSON Outputs
+When the user triggers generation from the dashboard, the backend agentic runner returns a complete execution object containing the final lesson, attempt iterations, check-by-check evaluations, and timestamped node logs:
 
-#### Successful Terminal Node: `Final Lesson`
-```json
-{
-  "status": "passed",
-  "lesson": "# Introduction to Retrieval-Augmented Generation (RAG)\n\nImagine you are taking an open-book exam...",
-  "attempt": 1
-}
-```
+### 1. Interactive Results Modal (Web UI Presentation)
 
-#### Fallback Terminal Node: `Failed Final Lesson`
-```json
-{
-  "status": "failed",
-  "lesson": "# Advanced Theoretical Dissertation: Introduction to RAG\n\n...",
-  "evaluation": {
-    "output": {
-      "overall_pass": false,
-      "checks": [
-        { "id": "topic_accuracy", "passed": true, "reason": "Accurately covers topic." },
-        { "id": "beginner_friendly", "passed": false, "reason": "Uses post-graduate terminology." }
-      ],
-      "failed_checks": ["beginner_friendly", "jargon"],
-      "regeneration_feedback": "Replace academic terminology with accessible vocabulary suitable for 12th-grade learners."
-    }
-  },
-  "attempt": 3
-}
-```
+The web application displays execution results inside a dedicated, multi-tab modal window:
+
+1. **Lesson Text Tab:**
+   - Displays the fully formatted Markdown lesson with visual typography and clear section headers.
+   - Shows attempt version badges (`Attempt 1`, `Attempt 2`, `Attempt 3`) allowing users to switch between draft revisions.
+   - Displays status indicators: `Verified Standalone Lesson` (emerald) or `Retry Safeguard Terminated` (amber).
+
+2. **Evaluator Quality Rubric Tab:**
+   - Displays all 8 criteria in an interactive grid.
+   - Each card features a status badge (`PASS` / `FAIL`), check ID, human-readable criterion title, and the evaluator model's exact explanatory reasoning.
+   - Failed checks are highlighted in red with an explicit critique callout banner showing `failed_checks` and `regeneration_feedback`.
+
+3. **Compare Drafts Side-by-Side Tab (Active on Multi-Attempt Runs):**
+   - Allows users to select any two attempts via `Draft A` and `Draft B` dropdown selectors.
+   - Shows a comparative summary of what changed between drafts.
+   - Provides a split-screen 2-column view displaying both drafts side-by-side with evaluator critiques and resolution notes.
+
+4. **Execution Trace Logs Tab:**
+   - Provides an audit trail of every pipeline event with timestamps, node names (`Generator`, `Store Lesson`, `Lesson Evaluator`, `Structured Parser`, `If Router`, `Retry Limit`, `Prepare Regeneration`), and status messages.
+
 
 ### 2. Multi-Format Export Capabilities (Web App)
 
