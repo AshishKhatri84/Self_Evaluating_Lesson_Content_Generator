@@ -176,42 +176,94 @@ To prevent infinite loops and runaway API token consumption:
 
 ---
 
-## Scenarios & Execution Paths
+## Scenarios & Execution Paths (Web Application)
 
-The application supports three distinct testing and production scenarios:
+The interactive web application provides dedicated execution modes that allow users to observe the autonomous feedback loop and safeguard mechanisms in real time on any chosen topic.
 
-### Scenario 1: Standard Autonomous Run (Clean Success Path)
-- **Concept:** Natural production authoring on any topic entered by the user.
-- **Workflow Behavior:** Generator creates a high-quality lesson draft. The Evaluator audits all 8 criteria. If the draft meets all standards on Attempt 1, it routes directly to `Final Lesson` with `overall_pass = true`.
+### Scenario 1: Standard Autonomous Run (Clean Baseline)
+- **Objective:** Tests normal autonomous authoring and strict quality auditing without artificial constraints.
+- **Flaws Introduced:** **None.** The Generator prompt instructs the model to adhere to all 8 beginner-friendly pedagogical criteria from the outset (structured What/Why/How format, relatable real-world analogy, upfront jargon definitions, and 12th-grade readability).
+- **Execution Lifecycle:**
+  1. The Generator drafts the initial lesson on the user-provided topic.
+  2. The Lesson Evaluator audits the draft against all 8 quality checks.
+  3. When all criteria pass on Attempt 1 (`overall_pass = true`), the workflow routes straight through the `If (TRUE)` branch to **Final Lesson** with status `passed`.
 
-### Scenario 2: Self-Correction Loop Scenario (Deliberate Remediation)
-- **Concept:** Demonstrates the Evaluator catching realistic pedagogical flaws and the Generator correcting them on Attempt 2.
-- **Flaws Simulated in Attempt 1:** High density of undefined jargon (`"dense vector embeddings"`, `"k-NN cosine similarity"`) and absence of a non-technical analogy.
-- **Workflow Behavior:**
-  1. Attempt 1 is audited: `jargon` and `examples` fail.
-  2. Evaluator generates specific feedback: *"Define technical terms like vector embeddings immediately upon introduction and provide a relatable real-world analogy."*
-  3. `Prepare Regeneration` increments attempt to `2`.
-  4. Attempt 2 addresses every critique, defines terms in plain English, introduces an everyday library analogy, passes all 8 checks, and completes at `Final Lesson`.
-- **Testing in n8n:** Add the following temporary instruction to the Generator prompt:
+---
+
+### Scenario 2: Self-Correction Loop Scenario (Attempt 1 ➔ Attempt 2)
+- **Objective:** Demonstrates the closed-loop self-correction pipeline where the Evaluator catches realistic pedagogical shortcomings in Attempt 1, provides targeted critique, and the Generator self-corrects in Attempt 2 to achieve an 8/8 pass.
+
+- **What Flaws Are Introduced in Attempt 1:**
+  1. **Missing Everyday Non-Technical Analogy (Check #4 `examples`):** The initial draft strictly explains technical mechanics, but deliberately omits intuitive, non-technical real-world comparisons (e.g., no comparisons to cooking recipes, public libraries, or open-book exams).
+  2. **Unexplained Technical Jargon (Check #5 `jargon`):** Specialized domain terms, algorithmic mechanics, and technical acronyms are introduced without upfront plain-English definitions or an introductory glossary.
+
+- **How the Flaws Are Injected Under the Hood:**
+  When **Test Self-Correction Loop** is selected, the server (`server.ts`) injects targeted constraints into the Gemini Generator prompt for Attempt 1:
   ```text
-  FOR DEMO ONLY:
-  Introduce one obvious technical error about the topic in the lesson, while keeping the rest of the lesson unchanged.
+  You are an author drafting an initial educational overview of "{topic}".
+  Write an initial, un-audited first draft explaining the concept.
+  CRITICAL INSTRUCTIONS FOR THIS INITIAL DRAFT:
+  1. Explain the technical mechanics of "{topic}".
+  2. Do NOT include any everyday non-technical analogies (do not compare to libraries, cooking, doctors, or exams). Keep examples strictly technical.
+  3. Use specialized technical terms or abbreviations without providing upfront plain-English definitions.
+  4. Keep it around 250-350 words in clean Markdown.
+  ```
+  *(In offline fallback mode, a matching un-audited draft with these exact flaws is served).*
+
+- **How the Evaluator Detects the Flaws:**
+  The Evaluator conducts an independent 8-point audit of Attempt 1:
+  - **Check #4 (`examples`):** Fails (`passed: false`). Reason: *"No intuitive non-technical analogy found (needs an everyday comparison, e.g., comparing to a library, cooking, or a doctor's chart)."*
+  - **Check #5 (`jargon`):** Fails (`passed: false`). Reason: *"Plain Jargon Explanations failed: Technical or specialized domain terms were introduced without upfront plain-English definitions or a glossary."*
+  - **Overall Status:** `overall_pass = false`, populating `failed_checks: ["examples", "jargon"]`.
+
+- **How the Self-Correction Occurs in Attempt 2:**
+  1. **Synthesizing Feedback:** The Evaluator generates explicit actionable feedback: *"Please ensure you include an everyday real-world analogy (e.g., comparing to cooking, an open-book exam, or a library), define all technical terms in plain English when first introduced, and provide a clear 1-2-3 step-by-step breakdown."*
+  2. **Feedback Injection:** `Prepare Regeneration` increments the attempt counter to `2` and feeds the critique directly into the Generator prompt for Attempt 2:
+     ```text
+     Previous evaluator feedback: { "failed_checks": ["examples", "jargon"], "regeneration_feedback": "..." }
+     IMPORTANT: Carefully address the evaluator critique above! Fix the failed points (such as adding the missing everyday analogy or defining jargon) while keeping the positive parts of the lesson intact.
+     ```
+  3. **Remediation & Pass:** Attempt 2 adds the missing relatable analogy, demystifies all jargon with a dedicated glossary, and passes all 8 rubric criteria (8/8 PASS). The workflow completes at **Final Lesson**.
+  4. **Side-by-Side Review:** Users can click the **Compare Drafts Side-by-Side** tab in the results modal to inspect the exact additions and fixes made between Attempt 1 and Attempt 2.
+
+---
+
+### Scenario 3: Retry Safeguard Scenario (Max 3 Retries & Terminal Fallback)
+- **Objective:** Demonstrates the system's bounded guardrail (`attempt < 3`), proving that the agentic workflow safely terminates at a controlled fallback node rather than entering an infinite loop when content persistently fails quality criteria.
+
+- **What Flaws Are Introduced Across All Attempts:**
+  1. **Persistent University-Level Academic Jargon (Check #2 `beginner_friendly` & Check #5 `jargon`):** The text maintains dense, post-graduate scholarly prose filled with high-level theoretical vocabulary across every single attempt.
+  2. **Total Absence of Pedagogical Scaffolding (Check #4 `examples` & Check #3 `key_concepts`):** Completely refuses to provide everyday non-technical analogies, simple 1-2-3 step sequences, or accessible beginner explanations.
+
+- **How the Flaws Are Injected Under the Hood:**
+  When **Test Retry Safeguard** is selected, the server enforces a scholarly monograph prompt across all attempts (Attempt 1, Attempt 2, and Attempt 3):
+  ```text
+  You are a university academic researcher writing a formal scholarly critique of "{topic}" (Draft Attempt {attempt}).
+  1. Strictly write about "{topic}" in depth.
+  2. Write in dense, highly formal academic prose with specialized academic vocabulary suitable to "{topic}".
+  3. Do NOT include any simple everyday analogies (no cooking, library, or doctor comparisons).
+  4. Do NOT simplify for a 12th grader with no prior background.
+  5. Do NOT include a beginner glossary or simple 1-2-3 guide.
   ```
 
-### Scenario 3: Retry Limit Safeguard Scenario (Controlled Fallback)
-- **Concept:** Demonstrates the system's termination guardrail when an explanation persistently fails quality criteria across all allowed attempts.
-- **Workflow Behavior:**
-  1. Attempt 1 fails $\to$ regenerates to Attempt 2.
-  2. Attempt 2 fails $\to$ regenerates to Attempt 3.
-  3. Attempt 3 fails $\to$ `Retry Limit` condition (`attempt < 3`) evaluates to `false`.
-  4. Execution routes safely to `Failed Final Lesson`, outputting the latest draft alongside the complete failure diagnostic report.
-- **Testing in n8n:** Add the following temporary instruction to the Lesson Evaluator prompt:
-  ```text
-  FOR TESTING ONLY:
-  Set overall_pass to false for this evaluation, regardless of the lesson quality.
-  ```
+- **How the Bounded Loop Enforces Safe Termination:**
+  - **Attempt 1:** The Evaluator audits Attempt 1 and flags it for dense academic tone and missing analogies (`overall_pass: false`). The Retry Limit guard checks `attempt < 3` ($1 < 3$ is **TRUE**), triggering Attempt 2.
+  - **Attempt 2:** The academic prompt re-authors Attempt 2. The Evaluator audits and rejects it again (`overall_pass: false`). The Retry Limit guard checks `attempt < 3` ($2 < 3$ is **TRUE**), triggering Attempt 3.
+  - **Attempt 3:** Attempt 3 fails the evaluation for the third time (`overall_pass: false`).
+  - **Safe Loop Termination:** The Retry Limit evaluates `attempt < 3` ($3 < 3$ is **FALSE**). The workflow halts further regeneration and cleanly routes to the **Failed Final Lesson** fallback terminal node.
+  - **Diagnostic Report:** The user receives the full diagnostic report showing all 3 failed attempts, specific criteria failures for each attempt, and the complete evaluator critique trace.
 
-*(Note: In the full-stack web application, Scenarios 2 and 3 can be selected directly from the interactive "Test Scenarios" panel).*
+---
+
+### Using Scenarios in the Web Application
+
+1. **Select a Scenario:** Scroll to the **Workflow Execution Scenarios** section on the dashboard and click either **Test Self-Correction Loop** or **Test Retry Safeguard** in the Test Scenarios panel.
+2. **Visual Confirmation:** An active scenario badge immediately appears above the generator input box (e.g., `"Selected Scenario: Test Self-Correction Loop"`).
+3. **Execute:** Enter your desired topic (or keep the default `"Introduction to RAG"`) and click **"Generate & Evaluate Lesson"**.
+4. **Inspect Evolution & Download:** In the results modal:
+   - Switch between **Attempt 1**, **Attempt 2**, and **Attempt 3** to inspect how the drafts evolved.
+   - Open the **Compare Drafts Side-by-Side** tab to review differences side-by-side.
+   - Click **Download Comparison** to export a complete comparative audit report in **Text (.txt)**, **Word (.doc)**, or **PDF (.pdf)**.
 
 ---
 
