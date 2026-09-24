@@ -6,6 +6,7 @@ An autonomous agentic workflow and interactive web application that generates be
 
 ---
 
+
 ## Overview
 
 Traditional single-pass LLM prompts frequently suffer from hallucinations, unexplained technical jargon, or uneven teaching flow. The **Self-Evaluating Lesson Content Generator** solves this by implementing an autonomous **Generator-Evaluator Agentic Feedback Loop**:
