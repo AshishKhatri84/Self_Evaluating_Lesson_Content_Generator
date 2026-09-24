@@ -1,0 +1,7 @@
+{
+  "name": "Self-Evaluating Lesson Content Generator",
+  "description": "An agentic workflow that generates beginner-friendly educational lessons, evaluates them against an 8-point quality rubric, and automatically regenerates with feedback or routes to a safe fallback.",
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
