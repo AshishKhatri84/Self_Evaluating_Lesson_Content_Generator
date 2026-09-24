@@ -1,441 +1,215 @@
 # Self-Evaluating Lesson Content Generator
 
-An n8n agentic workflow that generates a beginner-friendly lesson, evaluates it against a strict quality rubric, and either accepts it or regenerates it using evaluator feedback.
+An autonomous agentic workflow and interactive web application that generates beginner-friendly educational lessons on any topic, rigorously audits them against an 8-point quality rubric, and automatically self-corrects using evaluator feedback loops.
 
-## Assignment objective
-
-The workflow is designed for beginner learners in India who may have recently completed 12th grade, have limited English vocabulary, and have no prior AI knowledge.
-
-The current example topic is **Introduction to RAG**.
-
-The workflow demonstrates:
-
-- LLM-based content generation
-- structured LLM evaluation
-- pass/fail routing
-- evaluator-driven regeneration
-- bounded retry logic
-- a controlled failure/fallback path
+![Agentic Workflow Overview](Evidence/01_Workflow_Overview.png)
 
 ---
 
-# Submission deliverables
+## Overview
 
-## 1. GitHub repository
+Traditional LLM generators frequently suffer from hallucinations, unexplained technical jargon, or uneven teaching flow. The **Self-Evaluating Lesson Content Generator** solves this by implementing an autonomous **Generator-Evaluator Agentic Feedback Loop**:
 
-Include:
+1. **Content Generator**: Creates a structured, beginner-level lesson tailored for high school graduates with limited technical vocabulary.
+2. **Evaluator Agent**: Audits the draft against **8 hard PASS/FAIL quality checks** using structured JSON output schemas.
+3. **Autonomous Routing**:
+   - If **all 8 checks pass** $\to$ Immediately accepts and outputs the **Final Lesson**.
+   - If **any check fails** $\to$ Automatically extracts specific remediation feedback and re-prompts the Generator for an improved draft (bounded by a maximum 3-attempt safety limit).
+   - If retry limit is reached $\to$ Delivers a controlled **Failed Final Lesson** terminal output with full audit history.
 
-- agentic workflow JSON
-- README
-- technical documentation
-- evidence screenshots
-
-## 2. Final Output Document
-
-https://docs.google.com/document/d/1Irfxobxdl_lX7-jR5G0Zx-UvvOBNYfG9/edit?usp=sharing&ouid=111519718625107380109&rtpof=true&sd=true
-
-The document contains the accepted final lesson output, rather than the `Failed Final Lesson` fallback.
-
-### Note: The document is also uploaded to the repo as **Final Lesson Output.docx**.
-
-## 3. Video
-
-https://drive.google.com/file/d/15yYll0uGifpvhGQJLQHGvmUfIn4XGkDP/view?usp=drive_link
-
-The demonstration video covers:
-
-- the agentic workflow running end-to-end
-- the evaluator catching a deliberate technical error
-- the retry/regeneration behavior
-- the final accepted lesson
-- a face-visible walkthrough explaining how the workflow works
+Originally engineered as an **n8n agentic workflow**, the project now features a **full-stack web application** with an interactive dashboard, live workflow monitoring, multi-format export capabilities (Word, PDF, Text), and optional client-side API key management.
 
 ---
 
-# Project structure
+## Key Features
+
+### 1. Interactive Web Application
+- **Topic Input for Any Domain**: Generate lessons on cutting-edge AI (RAG, Vector Embeddings, Prompt Engineering), science (Photosynthesis, CRISPR), economics (Inflation, Compound Interest), or daily life concepts.
+- **Interactive Results Modal**: View the complete lesson, inspect check-by-check pass/fail scores with detailed reasoning, and review real-time execution logs.
+- **Multi-Format Export Suite**:
+  - **Formatted Text**: Clean Markdown file with full headers and structure.
+  - **Microsoft Word (`.doc`)**: Styled HTML-based Word document with clean typography.
+  - **PDF Export**: Clean, multi-page formatted document generated via `jspdf`.
+  - **One-Click Clipboard Copy**: Instantly copy the complete text.
+- **Workflow State & Log Monitor**: View timestamped logs of each node execution (Generator, Storage, Evaluator, Parser, Routing).
+
+### 2. Multi-Model Resilience
+- Automatically navigates Google Gemini service demand spikes by falling back across models:
+  $$\text{gemini-3.8-flash} \longrightarrow \text{gemini-3.6-flash} \longrightarrow \text{gemini-3.5-flash-lite}$$
+- Ensures reliable, uninterrupted generation even during high global API traffic.
+
+### 3. Optional Gemini API Key & Privacy Guarantee
+- Users can run using the shared environment or provide their own Google AI Studio API key.
+- **Live Key Connection Test**: Verify any key with a live ping before saving.
+- **Privacy & Security Guarantee**:
+  - **Zero Server Storage**: Your key is never saved to any database, file system, or server log.
+  - **Browser-Only Storage**: Stored exclusively inside your local browser's private `localStorage`.
+  - **Ephemeral In-Flight Proxy**: Forwarded in-memory over encrypted HTTPS solely to Google's official Gemini endpoint.
+  - **1-Click Erase**: Wipe stored credentials instantly anytime with the "Clear Stored Key" button.
+
+---
+
+## The 8-Point Quality Evaluation Rubric
+
+Every lesson draft is strictly audited by the Evaluator Agent against 8 hard PASS/FAIL criteria:
+
+| # | Check ID | Criterion | Requirement |
+|:---:|---|---|---|
+| **1** | `topic_accuracy` | **Topic Accuracy** | Must correctly explain the requested topic and never drift off-subject. |
+| **2** | `beginner_friendly` | **Beginner Friendly** | 12th-grade pass level; accessible vocabulary, clear phrasing, zero assumed background. |
+| **3** | `key_concepts` | **Core Concepts** | Must answer: (1) What it is, (2) Why it matters, and (3) How it works step-by-step. |
+| **4** | `examples` | **Analogies & Examples** | Must include at least 1 intuitive real-world analogy and 1 concrete practical example. |
+| **5** | `jargon` | **Jargon Control** | Unfamiliar or technical terms must be defined immediately upon introduction. |
+| **6** | `teaching_flow` | **Logical Flow** | Must progress smoothly from familiar everyday intuition to technical details. |
+| **7** | `technical_accuracy` | **Technical Accuracy** | No factual errors, unsupported claims, or misleading oversimplifications. |
+| **8** | `standalone` | **Standalone Mastery** | Complete enough that a learner needs no outside references or links to grasp the fundamentals. |
+
+> **Rule:** `overall_pass` is **TRUE** if and only if **all 8 checks pass**. A single failure triggers the feedback-driven regeneration loop.
+
+---
+
+## Agentic Architecture & Node Responsibilities
 
 ```text
-Self-Evaluating Lesson Content Generator/
-└── evidence/
-    ├── 01_Workflow_Overview.png
-    ├── 02_Generator_Prompt.png
-    ├── 03_Store_Generated_Lesson.png
-    ├── 04_Lesson_Evaluator_True.png
-    ├── 05_If_Pass_Fail_Routing.png
-    ├── 06_Final_Lesson_Output.png
-    ├── 07_Lesson_Evaluator_False.png
-    ├── 08_Retry_Limit.png
-    ├── 09_Prepare_Regeneration.png
-    ├── 10_Failed_Final_Lesson_Output.png
-    ├── 11_Retry-Regeneration_Flow.png
-    └── README.md
-├── DOCUMENTATION.md
-├── Final Lesson Output.docx
-├── README.md
-└── Workflow.json
+               ┌──────────────────────────────┐
+               │ When clicking 'Execute'      │
+               └──────────────┬───────────────┘
+                              ▼
+               ┌──────────────────────────────┐
+               │ Edit Fields (Topic, Attempt) │
+               └──────────────┬───────────────┘
+                              ▼
+        ┌────────────► ┌──────────────┐
+        │              │  Generator   │◄─────────────────────────────┐
+        │              └──────┬───────┘                              │
+        │                     ▼                                      │
+        │              ┌──────────────────────────────┐              │
+        │              │ Store Generated Lesson       │              │
+        │              └──────┬───────────────────────┘              │
+        │                     ▼                                      │
+        │              ┌──────────────────────────────┐              │
+        │              │ Lesson Evaluator (8 Checks)  │              │
+        │              └──────┬───────────────────────┘              │
+        │                     ▼                                      │
+        │              ┌──────────────────────────────┐              │
+        │              │ Structured Output Parser     │              │
+        │              └──────┬───────────────────────┘              │
+        │                     ▼                                      │
+        │              ┌──────────────────────────────┐              │
+        │              │ If: overall_pass === true?   │              │
+        │              └──────┬───────────────────────┘              │
+        │            PASS     │     FAIL                             │
+        │         ┌───────────┴───────────┐                          │
+        │         ▼                       ▼                          │
+        │  ┌──────────────┐        ┌──────────────┐                  │
+        │  │ Final Lesson │        │ Retry Limit  │                  │
+        │  │  (Accepted)  │        └──────┬───────┘                  │
+        │  └──────────────┘     Attempt < 3│  Attempt ≥ 3            │
+        │                         ┌────────┴────────┐                │
+        │                         ▼                 ▼                │
+        │              ┌──────────────────────┐ ┌──────────────────┐ │
+        │              │ Prepare Regeneration │ │Failed FinalLesson│ │
+        │              └──────────┬───────────┘ └──────────────────┘ │
+        └─────────────────────────┘                                  │
+         (Feedback & incremented attempt loop back to Generator) ────┘
+```
+
+| Node | Type | Function |
+|---|---|---|
+| **Manual Trigger** | Trigger | Initiates the workflow run |
+| **Edit Fields** | Transform | Sets `topic` and initializes `attempt = 1` |
+| **Generator** | LLM Task | Drafts the lesson using pedagogical guidelines and previous feedback |
+| **Store Lesson** | State | Caches the latest draft and forwards attempt metadata |
+| **Lesson Evaluator** | LLM Evaluator | Audits against the 8 pass/fail checks |
+| **Structured Output Parser** | Parser | Enforces structured JSON output schema |
+| **If Router** | Logic | Routes to **Final Lesson** on pass, or **Retry Limit** on fail |
+| **Retry Limit** | Guard | Verifies `attempt < 3` to guarantee bounded, non-infinite execution |
+| **Prepare Regeneration** | State | Increments attempt (`attempt + 1`) and bundles evaluator feedback for the Generator |
+| **Final Lesson** | Terminal | Returns verified, quality-assured lesson output |
+| **Failed Final Lesson** | Terminal | Delivers final draft with diagnostic evaluation report when retries are exhausted |
+
+---
+
+## Project Structure
+
+```text
+├── Evidence/                    # Workflow execution screenshots & audit logs
+│   ├── 01_Workflow_Overview.png
+│   ├── 02_Generator_Prompt.png
+│   ├── 03_Store_Generated_Lesson.png
+│   ├── 04_Lesson_Evaluator_True.png
+│   ├── 05_If_Pass_Fail_Routing.png
+│   ├── 06_Final_Lesson_Output.png
+│   ├── 07_Lesson_Evaluator_False.png
+│   ├── 08_Retry_Limit.png
+│   ├── 09_Prepare_Regeneration.png
+│   ├── 10_Failed_Final_Lesson_Output.png
+│   └── 11_Retry-Regeneration_Flow.png
+├── src/                         # Frontend React + TypeScript application
+│   ├── App.tsx                  # Dashboard, landing page, modal viewer, and export tools
+│   ├── main.tsx                 # React DOM mount
+│   └── index.css                # Global Tailwind CSS styling
+├── server.ts                    # Full-stack Node/Express engine & Gemini workflow runner
+├── DOCUMENTATION.md             # In-depth technical architecture documentation
+├── Workflow                     # Original n8n workflow specification (JSON)
+├── package.json                 # Project dependencies and run scripts
+└── README.md                    # Project documentation
 ```
 
 ---
 
-## Workflow
+## Getting Started
 
-```text
-Manual Trigger
-    ↓
-Edit Fields
-    ↓
-Generator
-    ↓
-Store Generated Lesson
-    ↓
-Lesson Evaluator
-    ↓
-If: overall_pass?
-   ├── TRUE  → Final Lesson
-   └── FALSE → Retry Limit
-                  ├── attempt < 3 → Prepare Regeneration → Generator
-                  └── attempt ≥ 3 → Failed Final Lesson
+### Prerequisites
+- **Node.js** (v18 or higher)
+- **Google Gemini API Key** (Free tier available at [Google AI Studio](https://aistudio.google.com/apikey))
+
+### 1. Clone & Install
+```bash
+git clone https://github.com/AshishKhatri84/Self_Evaluating_Lesson_Content_Generator.git
+cd Self_Evaluating_Lesson_Content_Generator
+npm install
 ```
 
-The Google Gemini chat model is connected to the Generator, Lesson Evaluator, and Structured Output Parser.
+### 2. Configure Environment Variables
+Create a `.env` file in the root directory (or copy from `.env.example`):
+```env
+GEMINI_API_KEY=your_google_gemini_api_key_here
+PORT=3000
+```
+*(Note: You can also start the app without setting `GEMINI_API_KEY` in `.env` and enter your key directly in the web UI settings modal).*
+
+### 3. Run the Development Server
+```bash
+npm run dev
+```
+Open your browser and navigate to:
+```text
+http://localhost:3000
+```
+
+### 4. Build for Production
+```bash
+npm run build
+npm start
+```
 
 ---
 
-## Node responsibilities
+## Importing into n8n (Optional)
 
-| Node | Purpose |
-|---|---|
-| **When clicking ‘Execute workflow’** | Starts a manual workflow execution |
-| **Edit Fields** | Sets the topic and initializes `attempt = 1` |
-| **Generator** | Creates the beginner lesson using the instructional prompt |
-| **Store Generated Lesson** | Stores the lesson and carries topic/attempt state forward |
-| **Lesson Evaluator** | Applies 8 hard pass/fail quality checks |
-| **Structured Output Parser** | Converts evaluator output into the expected JSON structure |
-| **If** | Sends passing evaluations to Final Lesson and failures to Retry Limit |
-| **Retry Limit** | Allows regeneration only while `attempt < 3` |
-| **Prepare Regeneration** | Increments the attempt and passes evaluator feedback back to Generator |
-| **Final Lesson** | Returns the accepted lesson |
-| **Failed Final Lesson** | Returns the last lesson plus failure details after the retry limit |
+If you wish to inspect or execute the standalone workflow inside an **n8n** automation instance:
+
+1. Start your n8n instance (local or hosted).
+2. Click **Add Workflow** $\to$ **Import from File**.
+3. Select the file named `Workflow` (or `Workflow.json`) in the root directory.
+4. Set up your **Google Gemini** credentials under **Credentials** $\to$ **Google PaLM / Gemini Chat Model**.
+5. Set your topic in the **Edit Fields** node and click **Execute workflow**.
 
 ---
 
-## Evaluation rubric
-
-The evaluator checks all of the following:
-
-1. **Topic accuracy**
-2. **Beginner friendly**
-3. **Key concepts**
-4. **Examples**
-5. **Jargon**
-6. **Teaching flow**
-7. **Technical accuracy**
-8. **Standalone lesson**
-
-The evaluator returns `overall_pass = true` only when every check passes.
-
-Each check contains:
-
-- id
-- passed
-- reason
-
-For a failed check it returns:
-
-- what failed;
-- why it failed;
-- what should be changed during regeneration.
-
-The evaluator also produces `failed_checks` and `regeneration_feedback`.
-
----
-
-# Setup
-
-## Requirements
-
-- n8n
-- Google AI Studio / Gemini API key
-- A Google Gemini-compatible model configured in n8n
-
-Docker is only an optional way to run n8n locally. It is not necessarily required.
-
-## 1. Run n8n
-
-Start your normal n8n instance.
-
-If you use Docker for n8n, keep your Docker volume/database local. Do not commit it to GitHub.
-
-## 2. Import the workflow
-
-Import:
-
-```text
-Self-Evaluating Lesson Content Generator.json
-```
-
-into n8n.
-
-## 3. Create a Gemini API key
-
-Create a Gemini API key in Google AI Studio.
-
-**Never put the API key in this repository or in the workflow JSON.**
-
-Then, in n8n:
-
-1. Open **Credentials**.
-2. Create/configure the Google Gemini / Google PaLM API credential supported by your n8n version.
-3. Paste your Gemini API key.
-4. Save the credential.
-5. Open **Google Gemini Chat Model** in the workflow.
-6. Select your newly created credential.
-
-Primary model used during development: **Gemini 3.6 Flash & Gemini 3.5 Flash Lite**
-
-## 4. Set the topic
-
-Open **Edit Fields**.
-
-The default example is:
-
-```text
-topic = Introduction to RAG
-attempt = 1
-```
-
-Change `topic` if you want to test another lesson topic.
-
-Keep:
-
-```text
-attempt = 1
-```
-
-for a fresh execution.
-
-## 5. Execute
-
-Click **Execute workflow**.
-
-A successful run should follow:
-
-```text
-Generator
- → Store Generated Lesson
- → Lesson Evaluator
- → If (TRUE)
- → Final Lesson
-```
-
-Inspect **Final Lesson** and confirm:
-
-```text
-status = passed
-```
-
-The successful attempt may be 1, 2, or 3 depending on whether regeneration was required.
-
----
-
-# Regeneration logic
-
-The workflow uses explicit attempt state.
-
-Initial state:
-
-```text
-attempt = 1
-```
-
-When evaluation fails, **Prepare Regeneration** sets:
-
-```text
-topic   = original topic
-attempt = previous attempt + 1
-feedback = evaluator output
-```
-
-The Generator then receives the new attempt number and previous evaluator feedback.
-
-The Retry Limit checks:
-
-```text
-$('Store Generated Lesson').item.json.attempt < 3
-```
-
-Therefore:
-
-```text
-Attempt 1 → fail → regenerate
-Attempt 2 → fail → regenerate
-Attempt 3 → fail → stop
-```
-
-A maximum of **three generation attempts** is allowed.
-
-This prevents an unbounded agentic loop.
-
----
-
-# How to test the evaluator catching a deliberate error
-
-The assignment asks for a demonstration of the evaluator catching a deliberate error.
-
-The cleanest demonstration is to temporarily add a testing instruction to the **Generator** prompt:
-
-```text
-FOR DEMO ONLY:
-Introduce one obvious technical error about the topic in the lesson, while keeping the rest of the lesson unchanged.
-```
-
-Run the workflow.
-
-The intended behavior is:
-
-```text
-Generator
-   ↓
-lesson containing deliberate error
-   ↓
-Lesson Evaluator
-   ↓
-overall_pass = false
-   ↓
-failed_checks identifies the relevant problem
-   ↓
-regeneration_feedback explains what to fix
-   ↓
-Prepare Regeneration
-   ↓
-Generator receives feedback
-```
-
-After the demonstration, **remove the testing instruction** from the Generator prompt.
-
-This instruction must not be present in the final production workflow.
-
----
-
-# How to test the Failed Final Lesson branch
-
-If you specifically want to demonstrate the terminal failure branch without depending on the model randomly producing a failing lesson, temporarily add this line to the **Lesson Evaluator** prompt:
-
-```text
-FOR TESTING ONLY:
-Set overall_pass to false for this evaluation, regardless of the lesson quality.
-```
-
-This deliberately forces the FALSE branch.
-
-Expected behavior:
-
-```text
-Attempt 1 → Retry Limit → Prepare Regeneration
-Attempt 2 → Retry Limit → Prepare Regeneration
-Attempt 3 → Retry Limit → Failed Final Lesson
-```
-
-After the demonstration, **remove that line**.
-
-It must not be present in the final submitted evaluator prompt.
-
-The repository's final workflow export does **not** contain this test instruction.
-
----
-
-# Final outputs
-
-## Successful path
-
-**Final Lesson** returns:
-
-```text
-status
-lesson
-attempt
-```
-
-The lesson is the accepted final content, copied into the Final Lesson Output Google Doc.
-
-## Failure path
-
-When the workflow reaches the retry limit without receiving a passing evaluation, 
-
-**Failed Final Lesson** returns:
-
-```text
-status
-lesson
-evaluation (with failed_checks & regeneration_feedback)
-attempt
-```
-
-Example structure:
-
-```json
-{
-  "status": "failed",
-  "lesson": "<last generated lesson>",
-  "evaluation": {
-    "output": {
-      "overall_pass": false,
-      "checks": [
-        {
-          "id": "<check_id>",
-          "passed": true,
-          "reason": "<reason>"
-        }
-      ],
-      "failed_checks": [
-        "<failed_check_id>"
-      ],
-      "regeneration_feedback": "<what failed and what should be corrected>"
-    }
-  },
-  "attempt": 3,
-}
-```
-
-The `evaluation` field preserves the evaluator result with `failed_checks` and `regeneration_feedback`, surfaced directly by the final failure node for easier inspection.
-
----
-
-# Evidence
-
-The `evidence/` directory contains labeled screenshots of the workflow and its important execution states.
-
-The evidence covers:
-
-- complete workflow architecture
-- lesson generation
-- generated lesson storage
-- successful evaluator output
-- pass/fail routing
-- successful Final Lesson output
-- evaluator-detected failure
-- retry limit
-- regeneration preparation
-- controlled failed final output
-- actual retry/regeneration execution flow
-
-The retry/regeneration evidence is particularly useful because it shows that multiple nodes were actually executed during the failed evaluation and regeneration cycle rather than only showing the static workflow design.
-
----
-
-# Security
-
-Do not commit:
-
-- Gemini API keys
-- `.env` files containing secrets
-- n8n database files
-- Docker volumes
-- browser/session data
-- local credential stores
-
-The workflow JSON contains a credential reference, but no Gemini API key.
-
-Before publishing to GitHub, open the JSON once and confirm that no secret value has been added.
-
----
+## Author & Acknowledgements
+
+- **Created by:** [Ashish Khatri](https://github.com/AshishKhatri84)
+- **AI Engine:** Google Gemini (`gemini-3.8-flash`, `gemini-3.6-flash`, `gemini-3.5-flash-lite`) via `@google/genai`
+- **Frontend Stack:** React 19, TypeScript, Tailwind CSS, Vite, Lucide Icons, jsPDF

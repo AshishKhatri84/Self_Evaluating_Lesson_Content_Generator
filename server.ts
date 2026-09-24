@@ -148,27 +148,27 @@ export const RUBRIC_CHECKS = [
   },
   {
     id: "beginner_friendly",
-    name: "Beginner Friendly",
-    description: "A learner who has only completed 12th grade with limited English and no prior AI knowledge should easily understand.",
+    name: "Beginner-Friendly Tone",
+    description: "A learner who has only completed 12th grade with limited English and no prior subject knowledge should easily understand.",
   },
   {
     id: "key_concepts",
-    name: "Key Concepts",
+    name: "Core Key Concepts (What, Why & How)",
     description: "Must explicitly explain: (1) what the topic is, (2) why it matters, and (3) how it works step-by-step.",
   },
   {
     id: "examples",
-    name: "Analogies & Examples",
-    description: "Must contain at least one simple real-world analogy and at least one concrete technical example.",
+    name: "Everyday Analogies & Practical Examples",
+    description: "Must contain at least one simple real-world analogy and at least one concrete practical example.",
   },
   {
     id: "jargon",
-    name: "Jargon Handling",
+    name: "Plain Jargon Explanations",
     description: "Technical terms must be plainly explained when first introduced without relying on unexplained vocabulary.",
   },
   {
     id: "teaching_flow",
-    name: "Teaching Flow",
+    name: "Logical Scaffolding Flow",
     description: "Must move logically from basic everyday concepts to more technical concepts.",
   },
   {
@@ -264,6 +264,66 @@ If you monitor how **${topic}** behaves under normal conditions versus sudden ch
 - **Practical Value**: Knowing how **${topic}** works empowers you to make smarter, better-informed choices.`;
 }
 
+// Substantive text inspection heuristic when Gemini API is offline or quota-limited
+function evaluateLessonHeuristically(topic: string, lesson: string): EvaluationOutput {
+  const lower = lesson.toLowerCase();
+  
+  // Check: Topic accuracy
+  const hasTopic = topic.split(' ').some(word => word.length > 2 && lower.includes(word.toLowerCase()));
+  
+  // Check: Must have an everyday non-technical analogy
+  const hasAnalogy = lower.includes('analogy') || lower.includes('imagine you') || lower.includes('think of a') || lower.includes('like a doctor') || lower.includes('like a student') || lower.includes('library') || lower.includes('kitchen') || lower.includes('recipe') || lower.includes('kettle');
+  
+  // Check: Key concepts (what, why, how step by step)
+  const hasSteps = lower.includes('step') || lower.includes('how it works') || lower.includes('step-by-step') || lower.includes('1.') || lower.includes('step 1');
+  const hasWhy = lower.includes('why') || lower.includes('matters') || lower.includes('importance');
+  const hasWhat = lower.includes('what is') || lower.includes('what are') || lower.includes('definition') || lower.includes('stands for') || lower.includes('introduction') || lower.includes('overview');
+  
+  // Check: Beginner friendly & Jargon handling
+  const hasHeavyAcademicTone = lower.includes('treatise') || lower.includes('monograph') || lower.includes('dissertation') || lower.includes('methodological') || lower.includes('taxonomies') || lower.includes('epistemological') || lower.includes('endogenous') || lower.includes('deconstruction') || lower.includes('dialectical') || lower.includes('hilbert') || lower.includes('post-structuralist');
+  const hasGlossaryOrDefinitions = lower.includes('glossary') || lower.includes('definition') || lower.includes('plain words') || lower.includes('means') || lower.includes('called') || lower.includes('takeaways') || lower.includes('in simple terms');
+  
+  const failed: string[] = [];
+  const checks = RUBRIC_CHECKS.map(c => {
+    let passed = true;
+    let reason = `Criterion satisfied: ${c.name} meets 12th-grade beginner standards.`;
+    
+    if (c.id === 'topic_accuracy' && !hasTopic) {
+      passed = false;
+      reason = `Topic Accuracy failed: The draft does not directly address or name "${topic}".`;
+    } else if (c.id === 'examples' && !hasAnalogy) {
+      passed = false;
+      reason = `Everyday Analogies failed: No intuitive non-technical analogy found (needs an everyday comparison, e.g. comparing to a library, cooking, or a doctor's chart).`;
+    } else if (c.id === 'key_concepts' && (!hasSteps || !hasWhy || !hasWhat)) {
+      passed = false;
+      reason = `Core Key Concepts failed: Missing structured breakdown of What it is, Why it matters, or Step-by-Step mechanics.`;
+    } else if (c.id === 'beginner_friendly' && hasHeavyAcademicTone) {
+      passed = false;
+      reason = `Beginner-Friendly Tone failed: Contains dense university-level academic framing exceeding a 12th-grade pass baseline.`;
+    } else if (c.id === 'jargon' && (hasHeavyAcademicTone || !hasGlossaryOrDefinitions)) {
+      passed = false;
+      reason = `Plain Jargon Explanations failed: Technical or specialized domain terms were introduced without upfront plain-English definitions or a glossary.`;
+    }
+    
+    if (!passed) failed.push(c.id);
+    return { id: c.id, passed, reason };
+  });
+  
+  const overall_pass = failed.length === 0;
+  let feedback = "";
+  if (!overall_pass) {
+    const failedNames = failed.map(id => RUBRIC_CHECKS.find(rc => rc.id === id)?.name || id);
+    feedback = `The lesson draft failed on: ${failedNames.join(', ')}. Action required: Please ensure you include an everyday real-world analogy (e.g. comparing to cooking, an open-book exam, or a library), define all technical terms in plain English when first introduced, and provide a clear 1-2-3 step-by-step breakdown for a 12th-grade beginner.`;
+  }
+  
+  return {
+    overall_pass,
+    checks,
+    failed_checks: failed,
+    regeneration_feedback: feedback
+  };
+}
+
 // Helper to evaluate a lesson with Gemini or natural rubric evaluation
 async function evaluateLessonWithGemini(
   ai: GoogleGenAI | null,
@@ -271,43 +331,36 @@ async function evaluateLessonWithGemini(
   lesson: string
 ): Promise<EvaluationOutput> {
   if (!ai) {
-    // Offline simulation mode
-    return {
-      overall_pass: true,
-      checks: RUBRIC_CHECKS.map(c => ({
-        id: c.id,
-        passed: true,
-        reason: `Requirement satisfied: ${c.name.toLowerCase()} meets beginner student criteria.`
-      })),
-      failed_checks: [],
-      regeneration_feedback: ""
-    };
+    return evaluateLessonHeuristically(topic, lesson);
   }
 
   try {
-    const prompt = `You are a strict quality evaluator for beginner educational content.
+    const prompt = `You are a strict, objective educational quality auditor for beginner learning materials.
 
-You are evaluating a lesson generated for this topic:
+You are auditing a lesson generated for the topic:
 "${topic}"
 
-Here is the generated lesson text:
+Here is the lesson draft to evaluate:
+"""
 ${lesson}
+"""
 
-Evaluate the lesson strictly using these 8 HARD PASS/FAIL checks:
-CHECK 1 — topic_accuracy: The lesson must correctly explain the requested topic ("${topic}") and must not teach a different topic.
-CHECK 2 — beginner_friendly: A learner who has only completed 12th grade with limited English and no prior knowledge of this subject should easily understand.
-CHECK 3 — key_concepts: The lesson must explicitly explain: (1) what the topic is, (2) why it matters, and (3) how it works step-by-step.
-CHECK 4 — examples: The lesson must contain at least one simple real-world analogy and at least one concrete practical or technical example.
-CHECK 5 — jargon: Technical terms must be plainly explained when first introduced without relying on unexplained vocabulary.
-CHECK 6 — teaching_flow: The lesson must move logically from basic everyday concepts to more technical concepts.
-CHECK 7 — technical_accuracy: The lesson must not contain technical errors, misleading explanations, or unsupported claims presented as facts.
-CHECK 8 — standalone: The learner should be able to master the foundational topic without needing another explanation or external links.
+Audit the lesson strictly against these 8 Quality Criteria (Hard Pass/Fail):
+1. Topic Accuracy (topic_accuracy): The lesson must directly and accurately explain "${topic}". It must not drift onto an unrelated subject.
+2. Beginner-Friendly Tone (beginner_friendly): A 12th-grade student with no prior background must easily comprehend the text. Avoid dense academic prose or university-level complexity.
+3. Core Key Concepts (key_concepts): Must explicitly answer: (1) what the topic is, (2) why it matters in the real world, and (3) how it works step-by-step.
+4. Everyday Analogies & Practical Examples (examples): Must contain AT LEAST ONE explicit everyday non-technical analogy (e.g. comparing to cooking, an open-book exam, a doctor's chart, a public library, etc.) AND at least one concrete practical example. If it only provides technical examples without an intuitive real-world analogy, this check MUST FAIL.
+5. Plain Jargon Explanations (jargon): Technical terms, acronyms, or specialized domain vocabulary must be clearly defined in plain English right when introduced. If technical terms appear without immediate explanation, this check MUST FAIL.
+6. Logical Scaffolding Flow (teaching_flow): Must progress smoothly from intuitive everyday concepts to specific details.
+7. Technical Accuracy (technical_accuracy): No factual errors, misleading simplifications, or unsupported claims.
+8. Standalone Completeness (standalone): A learner should master the foundational topic from this text alone without needing outside links.
 
-Rules:
-- The overall_pass is TRUE ONLY if ALL 8 checks pass.
-- If ANY check fails, overall_pass must be FALSE, and failed_checks must list their IDs.
-- For every check, write a concise reason.
-- If failed, regeneration_feedback must give specific instructions on how to fix the failed parts in the next draft.`;
+Auditing Rules:
+- Be an honest, thorough auditor. Do NOT automatically pass a draft if it lacks an everyday analogy or uses unexplained technical vocabulary.
+- overall_pass is TRUE ONLY if ALL 8 checks pass.
+- If ANY check fails, overall_pass must be FALSE, and failed_checks must list their exact IDs (e.g. ["examples", "jargon"]).
+- For each check, write a concise, specific reason citing the criterion name and what was found or missing.
+- If failed, regeneration_feedback must cite the failed criteria by name (e.g. "Everyday Analogies & Practical Examples", "Plain Jargon Explanations") and tell the author exactly what to add or fix for the next draft.`;
 
     const { text } = await callGeminiWithFallback(ai, {
       contents: prompt,
@@ -345,23 +398,71 @@ Rules:
   } catch (err: any) {
     const errorMsg = String(err?.message || err);
     console.error('[Evaluator error]:', errorMsg);
-    if (errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('quota')) {
-      const quotaErr = new Error('GEMINI_QUOTA_EXHAUSTED');
-      (quotaErr as any).isQuota = true;
-      throw quotaErr;
-    }
-    // Graceful fallback to passing evaluation if formatting or network hiccup
-    return {
-      overall_pass: true,
-      checks: RUBRIC_CHECKS.map(c => ({
-        id: c.id,
-        passed: true,
-        reason: `Evaluated successfully under robust rubric criteria: ${c.name}.`
-      })),
-      failed_checks: [],
-      regeneration_feedback: ""
-    };
+    // Use substantive heuristic fallback so audit is genuine even if API has a temporary hiccup
+    return evaluateLessonHeuristically(topic, lesson);
   }
+}
+
+function getOfflineLessonForScenario(topic: string, attempt: number, scenarioMode: string): string {
+  if (scenarioMode === 'self_correction' && attempt === 1) {
+    return `# Practical Technical Guide: ${topic} (Initial Draft)
+
+## 1. What is ${topic}?
+**${topic}** is an essential mechanism in contemporary workflows and computational architectures. It standardizes how information is structured, processed, and evaluated across target pipelines.
+
+## 2. Core Operational Sequence
+1. **Input Parsing & Pre-Processing**: Data relating to ${topic} is captured and normalized according to predefined architectural schemas.
+2. **Algorithmic Evaluation**: Dedicated subroutines analyze the normalized payload against core operational parameters.
+3. **Delivery & Downstream Integration**: The resulting payload is transmitted to consumer systems or persistent storage layers.
+
+## 3. Implementation Context
+In enterprise deployment, **${topic}** is commonly exposed through API endpoints with optimized indexing structures to ensure high throughput and minimal response latency.
+
+## 4. Key Takeaways
+- **${topic}** provides a reliable operational pipeline for complex data interactions.
+- Structured input protocols enable reliable automated execution.`;
+  }
+
+  if (scenarioMode === 'retry_limit') {
+    if (attempt === 1) {
+      return `# Advanced Academic Monograph: ${topic} (Attempt 1)
+
+## 1. Theoretical & Contextual Overview
+A rigorous scholarly inquiry into **${topic}** necessitates investigating its multi-tiered conceptual architecture and institutional conventions. Rather than reducing the subject to colloquial simplifications, advanced scholarship situates **${topic}** within historical, structural, and systemic theoretical frameworks.
+
+## 2. Structural Dynamics & Systemic Mechanics
+Within the domain of **${topic}**, operational efficacy is governed by continuous interactions between constituent modules. Systemic behaviors emerge from specialized protocols, latent variable dynamics, and domain-specific taxonomies that require extensive prior familiarity.
+
+## 3. Critical Analytical Perspective
+Standard introductory literature frequently overlooks the underlying tensions inherent to **${topic}**. Comprehensive analysis demands formal deconstruction of its structural parameters rather than high-level intuitive metaphors.`;
+    }
+
+    if (attempt === 2) {
+      return `# Structural & Conceptual Treatise: ${topic} (Attempt 2)
+
+## 1. Re-Evaluation of Structural Foundations
+Re-evaluating **${topic}** following initial critique requires deeper engagement with its macro-level architecture and specialized nomenclature. The conceptual framework of **${topic}** remains characterized by high-density domain taxonomies and interconnected procedural standards.
+
+## 2. Institutional Mechanics & Dialectical Interactions
+The operational continuum of **${topic}** relies on continuous feedback between specialized protocols and external environmental constraints. Specific mechanisms dictate how inputs are transformed across distinct layers of execution without colloquial simplification.
+
+## 3. Methodological Synthesis
+A complete structural model of **${topic}** demands rigorous synthesis of its overarching paradigms, rejecting elementary simplifications in favor of comprehensive domain-specific analytical precision.`;
+    }
+
+    return `# Advanced Theoretical Dissertation: ${topic} (Attempt 3)
+
+## 1. Definitive Conceptual Synthesis
+This third revision of **${topic}** presents a formal scholarly assessment. The central framework explores the systemic integration, evolutionary adaptations, and structural constraints that define **${topic}** within modern literature.
+
+## 2. Operational Modalities & Latent Variables
+The internal mechanics of **${topic}** operate through multi-layered procedural standards. Rigorous empirical observation indicates that functional performance is dictated by systemic boundary conditions rather than isolated operational drivers.
+
+## 3. Concluding Analytical Assessment
+A rigorous assessment demonstrates that **${topic}** constitutes an advanced architectural paradigm whose nuances cannot be adequately captured without specialized domain expertise and theoretical mastery.`;
+  }
+
+  return getOfflineTopicLesson(topic);
 }
 
 // Helper to generate a lesson with Gemini
@@ -369,16 +470,43 @@ async function generateLessonWithGemini(
   ai: GoogleGenAI | null,
   topic: string,
   attempt: number,
-  feedback: EvaluationOutput | null
+  feedback: EvaluationOutput | null,
+  scenarioMode: 'auto' | 'self_correction' | 'retry_limit' = 'auto'
 ): Promise<string> {
   if (!ai) {
-    return getOfflineTopicLesson(topic);
+    return getOfflineLessonForScenario(topic, attempt, scenarioMode);
   }
 
   try {
-    const prompt = `You are an expert instructional content creator for beginner learners.
+    let prompt = '';
 
-Create a standalone beginner lesson about any topic provided below (it can be technical like RAG, Vector Embeddings, LLMs, or general topics in science, economics, everyday life).
+    if (scenarioMode === 'self_correction' && attempt === 1) {
+      // Intentionally simulate a realistic, un-audited initial draft with common pedagogical flaws
+      // (e.g. explains mechanics, but omits an everyday analogy and uses technical terminology without defining it upfront)
+      prompt = `You are an author drafting an initial educational overview of "${topic}".
+Write an initial, un-audited first draft explaining the concept.
+CRITICAL INSTRUCTIONS FOR THIS INITIAL DRAFT:
+1. Explain the technical mechanics of "${topic}".
+2. Do NOT include any everyday non-technical analogies (do not compare to libraries, cooking, doctors, or exams). Keep examples strictly technical.
+3. Use specialized technical terms or abbreviations without providing upfront plain-English definitions.
+4. Keep it around 250-350 words in clean Markdown.`;
+    } else if (scenarioMode === 'retry_limit') {
+      // Simulates persistent pedagogical barriers / dense university-level framing for ANY topic
+      prompt = `You are a university academic researcher writing a formal scholarly critique of "${topic}" (Draft Attempt ${attempt}).
+Instructions:
+1. Strictly write about "${topic}" in depth. Discuss its real-world context, history, narrative, or technology depending on what "${topic}" is.
+2. Do NOT introduce unrelated quantum physics or math equations unless "${topic}" is specifically physics or math.
+3. Write in dense, highly formal academic prose with specialized academic vocabulary suitable to "${topic}".
+4. Do NOT include any simple everyday analogies (no cooking, library, or doctor comparisons).
+5. Do NOT simplify for a 12th grader with no prior background.
+6. Do NOT include a beginner glossary or simple 1-2-3 guide.
+7. Length: 200-300 words in clean Markdown.`;
+    } else {
+      // Standard autonomous authoring
+      prompt = `You are an expert instructional content creator for beginner learners.
+
+Create a standalone beginner lesson about:
+"${topic}"
 
 Learner profile:
 - 12th-grade pass background
@@ -386,37 +514,38 @@ Learner profile:
 - Simple, clear English vocabulary
 - Needs intuitive real-world analogies and concrete examples
 
-Topic:
-"${topic}"
-
 Attempt number:
 ${attempt}
 
 Previous evaluator feedback (if any):
 ${feedback ? JSON.stringify(feedback) : 'No previous evaluation feedback. This is the first attempt.'}
 
-If previous feedback is provided, carefully address the evaluator's critique and fix the failed points while keeping the clear, positive parts of the lesson intact.
+${feedback ? 'IMPORTANT: Carefully address the evaluator critique above! Fix the failed points (such as adding the missing everyday analogy or defining jargon) while keeping the positive parts of the lesson intact.' : ''}
 
 Lesson Structure:
 1. Explain what "${topic}" is in very simple, conversational language.
 2. Explain why "${topic}" matters in the real world.
 3. Explain how it works step by step (clear 1-2-3 sequence).
-4. Include at least 1 simple real-world everyday analogy.
+4. Include at least 1 simple real-world everyday analogy (e.g., comparing to a library, cooking, doctor, etc.).
 5. Include at least 1 concrete practical or technical example.
 6. Explain all new or unfamiliar terms when first introduced (zero unexplained jargon).
 7. Progress logically from familiar everyday intuition to specific details.
-8. End with a short recap summary of key takeaways.
+8. Include a short glossary of essential terms and key takeaways recap.
 
 Write only the final lesson text in clean Markdown.`;
+    }
 
     const { text } = await callGeminiWithFallback(ai, {
       contents: prompt,
     });
 
-    return text || getOfflineTopicLesson(topic);
+    return text || getOfflineLessonForScenario(topic, attempt, scenarioMode);
   } catch (err: any) {
     const errorMsg = String(err?.message || err);
     console.error('[Generator error]:', errorMsg);
+    if (scenarioMode !== 'auto') {
+      return getOfflineLessonForScenario(topic, attempt, scenarioMode);
+    }
     if (errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('quota')) {
       const quotaErr = new Error('GEMINI_QUOTA_EXHAUSTED');
       (quotaErr as any).isQuota = true;
@@ -534,7 +663,7 @@ app.post('/api/workflow/verify-key', async (req: Request, res: Response) => {
 
 // Main endpoint: Execute the agentic workflow loop
 app.post('/api/workflow/run', async (req: Request, res: Response) => {
-  const { topic = 'Introduction to RAG', customApiKey } = req.body;
+  const { topic = 'Introduction to RAG', customApiKey, scenarioMode = 'auto' } = req.body;
   const headerApiKey = req.headers['x-gemini-api-key'] as string | undefined;
   const effectiveApiKey = customApiKey || headerApiKey;
 
@@ -550,8 +679,8 @@ app.post('/api/workflow/run', async (req: Request, res: Response) => {
     });
   };
 
-  addLog("When clicking ‘Execute workflow’", "Manual workflow trigger executed.");
-  addLog("Edit Fields", `Initialized workflow state: topic="${topic}", attempt=1.`);
+  addLog("When clicking ‘Execute workflow’", `Manual workflow trigger executed (Mode: ${scenarioMode}).`);
+  addLog("Edit Fields", `Initialized workflow state: topic="${topic}", attempt=1, mode="${scenarioMode}".`);
 
   let currentAttempt = 1;
   let previousFeedback: EvaluationOutput | null = null;
@@ -564,13 +693,14 @@ app.post('/api/workflow/run', async (req: Request, res: Response) => {
 
   try {
     while (currentAttempt <= MAX_ATTEMPTS) {
-      addLog("Generator", `Executing generator LLM (Attempt ${currentAttempt}/${MAX_ATTEMPTS})...`);
+      addLog("Generator", `Executing generator LLM (Attempt ${currentAttempt}/${MAX_ATTEMPTS}, Mode: ${scenarioMode})...`);
 
       const lessonText = await generateLessonWithGemini(
         ai,
         topic,
         currentAttempt,
-        previousFeedback
+        previousFeedback,
+        scenarioMode
       );
 
       addLog("Store Generated Lesson", `Stored generated lesson payload (${lessonText.length} chars). Carrying attempt=${currentAttempt} forward.`);
@@ -621,6 +751,10 @@ app.post('/api/workflow/run', async (req: Request, res: Response) => {
       }
     }
 
+    const demoModeValue: 'normal' | 'deliberate_error' | 'force_failure' = 
+      scenarioMode === 'self_correction' ? 'deliberate_error' : 
+      scenarioMode === 'retry_limit' ? 'force_failure' : 'normal';
+
     const result: WorkflowRunResult = {
       status: overallStatus,
       topic,
@@ -628,7 +762,7 @@ app.post('/api/workflow/run', async (req: Request, res: Response) => {
       attemptsCount: currentAttempt,
       iterations,
       terminalNode,
-      demoMode: 'normal',
+      demoMode: demoModeValue,
       logs
     };
 

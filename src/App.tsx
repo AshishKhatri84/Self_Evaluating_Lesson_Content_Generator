@@ -28,7 +28,10 @@ import {
   Coins,
   Microscope,
   Info,
-  RefreshCw
+  RefreshCw,
+  Zap,
+  ShieldAlert,
+  GitCompare
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -65,52 +68,63 @@ interface WorkflowRunResult {
   logs: { timestamp: string; node: string; message: string; data?: any }[];
 }
 
+export const RUBRIC_TITLES: Record<string, string> = {
+  topic_accuracy: 'Topic Accuracy',
+  beginner_friendly: 'Beginner-Friendly Tone',
+  key_concepts: 'Core Key Concepts (What, Why & How)',
+  examples: 'Everyday Analogies & Practical Examples',
+  jargon: 'Plain Jargon Explanations',
+  teaching_flow: 'Logical Scaffolding Flow',
+  technical_accuracy: 'Technical Accuracy',
+  standalone: 'Standalone Completeness'
+};
+
 const RUBRIC_DETAILS = [
   {
     id: 'topic_accuracy',
-    title: '1. Topic Accuracy',
+    title: 'Topic Accuracy',
     summary: 'Accurately and strictly explains the requested topic without straying.',
     details: 'Ensures the model stays on target for any subject chosen, without drifting into unrelated generalities.'
   },
   {
     id: 'beginner_friendly',
-    title: '2. Beginner-Friendly Tone',
+    title: 'Beginner-Friendly Tone',
     summary: 'Tailored for a 12th-grade pass student with no prior subject background and simple vocabulary.',
     details: 'Language is simple, encouraging, and free from intimidating academic barriers.'
   },
   {
     id: 'key_concepts',
-    title: '3. What, Why & How Framework',
+    title: 'Core Key Concepts (What, Why & How)',
     summary: 'Systematically covers: (1) what it is, (2) why it matters, and (3) step-by-step how it works.',
     details: 'Builds a complete, well-rounded mental model so the student grasps motivation and mechanics.'
   },
   {
     id: 'examples',
-    title: '4. Everyday Analogies & Examples',
+    title: 'Everyday Analogies & Practical Examples',
     summary: 'Must contain at least 1 relatable real-world analogy and 1 concrete practical example.',
-    details: 'Connects abstract ideas to familiar experiences like library books, doctors, or mobile apps.'
+    details: 'Connects abstract ideas to familiar everyday experiences like cooking, a library, or a doctor.'
   },
   {
     id: 'jargon',
-    title: '5. Zero Unexplained Jargon',
+    title: 'Plain Jargon Explanations',
     summary: 'Every new technical term is plainly defined when first introduced.',
     details: 'No assumed prerequisites. Concepts are demystified immediately before they are applied.'
   },
   {
     id: 'teaching_flow',
-    title: '6. Logical Scaffolding Flow',
+    title: 'Logical Scaffolding Flow',
     summary: 'Progresses smoothly from everyday intuition to deeper technical details.',
     details: 'Prevents cognitive overload by introducing simple concepts first and layering complexity naturally.'
   },
   {
     id: 'technical_accuracy',
-    title: '7. Technical Accuracy',
+    title: 'Technical Accuracy',
     summary: 'Free of technical fallacies, misconceptions, or false claims presented as facts.',
     details: 'Strictly audited to prevent AI hallucinations or misleading oversimplifications.'
   },
   {
     id: 'standalone',
-    title: '8. Standalone Completeness',
+    title: 'Standalone Completeness',
     summary: 'Self-contained lesson with key takeaways and summary for independent learning.',
     details: 'The learner fully understands the core subject without needing external links or supplementary books.'
   }
@@ -123,9 +137,17 @@ export default function App() {
   
   // Results Pop-up Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalTab, setModalTab] = useState<'lesson' | 'evaluation' | 'logs'>('lesson');
+  const [modalTab, setModalTab] = useState<'lesson' | 'compare' | 'evaluation' | 'logs'>('lesson');
   const [runResult, setRunResult] = useState<WorkflowRunResult | null>(null);
   const [selectedAttemptIndex, setSelectedAttemptIndex] = useState(0);
+  const [compareBaseIndex, setCompareBaseIndex] = useState(0);
+  const [compareTargetIndex, setCompareTargetIndex] = useState(1);
+
+  const currentAttempt = runResult?.iterations[selectedAttemptIndex] || runResult?.iterations[0];
+  const activeLesson = currentAttempt?.lesson || runResult?.finalLesson || '';
+
+  // Workflow Scenario Mode: 'auto' | 'self_correction' | 'retry_limit'
+  const [scenarioMode, setScenarioMode] = useState<'auto' | 'self_correction' | 'retry_limit'>('auto');
 
   // Copy feedback
   const [copyStatus, setCopyStatus] = useState(false);
@@ -238,12 +260,28 @@ export default function App() {
     setQuotaExhaustedNotice(null);
     setCurrentStepText('Generating initial beginner lesson with 12th-grade pedagogical profile...');
 
-    const steps = [
-      'Drafting beginner lesson with relatable everyday analogies...',
-      'Storing payload & passing to strict Lesson Evaluator...',
-      'Auditing drafted lesson against 8 hard PASS/FAIL quality checks...',
-      'Processing self-correction feedback loop & finalizing report...',
-    ];
+    const steps = scenarioMode === 'self_correction'
+      ? [
+          'Drafting initial lesson (with natural first-draft pedagogical flaws)...',
+          'Storing Attempt 1 draft & handing to strict Lesson Evaluator...',
+          'Lesson Evaluator auditing: detecting missing analogy & jargon...',
+          'Passing evaluator critique into Generator for Attempt 2 self-correction...',
+          'Finalizing accepted lesson & verified audit report...'
+        ]
+      : scenarioMode === 'retry_limit'
+      ? [
+          'Executing Attempt 1 under advanced academic constraints...',
+          'Evaluator rejecting Attempt 1 & routing to Prepare Regeneration...',
+          'Executing Attempt 2... Evaluating persistent pedagogical barriers...',
+          'Executing Attempt 3... Evaluating retry limit condition (attempt < 3)...',
+          'Retry limit reached! Activating terminal fallback safeguard...'
+        ]
+      : [
+          'Drafting beginner lesson with relatable everyday analogies...',
+          'Storing payload & passing to strict Lesson Evaluator...',
+          'Auditing drafted lesson against 8 hard PASS/FAIL quality checks...',
+          'Processing self-correction feedback loop & finalizing report...',
+        ];
 
     let stepIdx = 0;
     const interval = setInterval(() => {
@@ -262,7 +300,11 @@ export default function App() {
       const res = await fetch('/api/workflow/run', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ topic: topicToRun, customApiKey: customApiKey || undefined }),
+        body: JSON.stringify({
+          topic: topicToRun,
+          customApiKey: customApiKey || undefined,
+          scenarioMode
+        }),
       });
 
       if (res.status === 429) {
@@ -283,6 +325,10 @@ export default function App() {
       clearInterval(interval);
       setRunResult(data);
       setSelectedAttemptIndex(data.iterations.length - 1);
+      if (data.iterations.length > 1) {
+        setCompareBaseIndex(0);
+        setCompareTargetIndex(data.iterations.length - 1);
+      }
       setIsModalOpen(true);
       setModalTab('lesson');
 
@@ -305,31 +351,35 @@ export default function App() {
   };
 
   const handleCopy = () => {
-    if (!runResult?.finalLesson) return;
-    navigator.clipboard.writeText(runResult.finalLesson);
+    if (!activeLesson) return;
+    navigator.clipboard.writeText(activeLesson);
     setCopyStatus(true);
     setTimeout(() => setCopyStatus(false), 2000);
   };
 
   const exportAsText = () => {
-    if (!runResult?.finalLesson) return;
-    const content = `# ${runResult.topic} - Educational Lesson\n\n${runResult.finalLesson}\n\n---\nEvaluated by: Self-Evaluating Lesson Content Generator\nAttempts: ${runResult.attemptsCount}\nStatus: ${runResult.status.toUpperCase()}`;
+    if (!activeLesson || !runResult) return;
+    const attemptLabel = currentAttempt ? `Attempt ${currentAttempt.attempt} of ${runResult.attemptsCount}` : `Attempt ${runResult.attemptsCount}`;
+    const statusLabel = currentAttempt ? (currentAttempt.passed ? 'PASSED 8/8 CHECKS' : 'CRITIQUE / REJECTED') : runResult.status.toUpperCase();
+    const content = `# ${runResult.topic} - Educational Lesson\n\n${activeLesson}\n\n---\nEvaluated by: Self-Evaluating Lesson Content Generator\nDraft Version: ${attemptLabel}\nAudit Status: ${statusLabel}\nTerminal Node: ${runResult.terminalNode}`;
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${runResult.topic.replace(/\s+/g, '_')}_Lesson.txt`;
+    a.download = `${runResult.topic.replace(/\s+/g, '_')}_Attempt${currentAttempt?.attempt || 1}_Lesson.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const exportAsWord = () => {
-    if (!runResult?.finalLesson) return;
+    if (!activeLesson || !runResult) return;
+    const attemptLabel = currentAttempt ? `Attempt ${currentAttempt.attempt} of ${runResult.attemptsCount}` : `Attempt ${runResult.attemptsCount}`;
+    const statusLabel = currentAttempt ? (currentAttempt.passed ? 'PASSED 8/8' : 'REJECTED (NEEDS REGENERATION)') : runResult.status.toUpperCase();
     const htmlContent = `
       <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
       <head>
         <meta charset="utf-8">
-        <title>${runResult.topic}</title>
+        <title>${runResult.topic} - Attempt ${currentAttempt?.attempt || 1}</title>
         <style>
           body { font-family: 'Calibri', 'Segoe UI', Arial, sans-serif; font-size: 11pt; line-height: 1.6; color: #333333; margin: 40px; }
           h1 { color: #8C4A00; font-size: 20pt; border-bottom: 2px solid #E6D5C3; padding-bottom: 8px; }
@@ -338,16 +388,20 @@ export default function App() {
           p { margin-bottom: 12px; }
           ul, ol { margin-bottom: 16px; }
           li { margin-bottom: 6px; }
+          .meta-box { background-color: #FAF8F5; border: 1px solid #E2D9CF; padding: 12px; border-radius: 6px; margin-bottom: 20px; }
           .footer { font-size: 9pt; color: #888888; border-top: 1px solid #EEEEEE; margin-top: 30px; padding-top: 8px; }
         </style>
       </head>
       <body>
         <h1>${runResult.topic}</h1>
-        <p><strong>Target Audience:</strong> Beginner Learners (12th Grade Pass Background)</p>
-        <p><strong>Evaluator Status:</strong> ${runResult.status.toUpperCase()} (${runResult.attemptsCount} Attempt${runResult.attemptsCount > 1 ? 's' : ''})</p>
+        <div class="meta-box">
+          <p><strong>Draft Version:</strong> ${attemptLabel}</p>
+          <p><strong>Evaluator Audit Status:</strong> ${statusLabel}</p>
+          <p><strong>Target Audience:</strong> 12th-Grade Beginner Learners</p>
+        </div>
         <hr />
         <div>
-          ${runResult.finalLesson
+          ${activeLesson
             .replace(/^# (.*$)/gim, '<h1>$1</h1>')
             .replace(/^## (.*$)/gim, '<h2>$1</h2>')
             .replace(/^### (.*$)/gim, '<h3>$1</h3>')
@@ -366,14 +420,14 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${runResult.topic.replace(/\s+/g, '_')}_Lesson.doc`;
+    a.download = `${runResult.topic.replace(/\s+/g, '_')}_Attempt${currentAttempt?.attempt || 1}_Lesson.doc`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   // Dedicated Client-side PDF Generation with jsPDF (Reliable, formats markdown, direct download)
   const exportAsPdf = () => {
-    if (!runResult?.finalLesson) return;
+    if (!activeLesson || !runResult) return;
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'pt',
@@ -398,8 +452,10 @@ export default function App() {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(100, 100, 100);
+    const attemptLabel = currentAttempt ? `Attempt ${currentAttempt.attempt} of ${runResult.attemptsCount}` : `Attempt ${runResult.attemptsCount}`;
+    const statusLabel = currentAttempt ? (currentAttempt.passed ? 'PASSED 8/8' : 'REJECTED (NEEDS REGENERATION)') : runResult.status.toUpperCase();
     doc.text(
-      `Audience: Beginner Learners (12th Grade Background) | Evaluator Status: ${runResult.status.toUpperCase()} (${runResult.attemptsCount} Attempt${runResult.attemptsCount > 1 ? 's' : ''})`,
+      `Audience: Beginner Learners (12th Grade) | ${attemptLabel} | Status: ${statusLabel}`,
       margin,
       cursorY
     );
@@ -412,7 +468,7 @@ export default function App() {
     cursorY += 18;
 
     // Parse markdown lines
-    const lines = runResult.finalLesson.split('\n');
+    const lines = activeLesson.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
       const rawLine = lines[i].trim();
@@ -505,10 +561,8 @@ export default function App() {
       );
     }
 
-    doc.save(`${runResult.topic.replace(/\s+/g, '_')}_Lesson.pdf`);
+    doc.save(`${runResult.topic.replace(/\s+/g, '_')}_Attempt${currentAttempt?.attempt || 1}_Lesson.pdf`);
   };
-
-  const currentAttempt = runResult?.iterations[selectedAttemptIndex] || runResult?.iterations[0];
 
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-stone-900 flex flex-col selection:bg-amber-100 selection:text-amber-900">
@@ -529,7 +583,7 @@ export default function App() {
                 </span>
               </div>
               <p className="text-[11px] text-stone-500 hidden sm:block">
-                Self-Evaluating Educational Lesson Content Generator
+                Self-Evaluating Lesson Content Generator
               </p>
             </div>
           </div>
@@ -687,6 +741,74 @@ export default function App() {
                     );
                   })}
                 </div>
+              </div>
+            </div>
+
+            {/* Workflow Scenario & Test Mode Selector */}
+            <div className="space-y-2 pt-1 border-t border-stone-100">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-stone-700">
+                  Workflow Execution Mode:
+                </label>
+                <span className="text-[11px] text-stone-400">Test agentic feedback loops & safeguards</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setScenarioMode('auto')}
+                  disabled={isRunning}
+                  className={`p-3 rounded-2xl border text-left transition-all ${
+                    scenarioMode === 'auto'
+                      ? 'bg-amber-50/90 border-amber-500 ring-2 ring-amber-400/50 shadow-xs'
+                      : 'bg-[#FAF8F5] hover:bg-stone-50 border-stone-200 text-stone-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 font-semibold text-xs text-amber-950">
+                    <Zap className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>⚡ Standard Autonomous Run</span>
+                  </div>
+                  <p className="text-[11px] text-stone-600 mt-1 leading-snug">
+                    Natural authoring. Evaluator audits all 8 criteria strictly and triggers self-correction if any flaw arises.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setScenarioMode('self_correction')}
+                  disabled={isRunning}
+                  className={`p-3 rounded-2xl border text-left transition-all ${
+                    scenarioMode === 'self_correction'
+                      ? 'bg-amber-50/90 border-amber-500 ring-2 ring-amber-400/50 shadow-xs'
+                      : 'bg-[#FAF8F5] hover:bg-stone-50 border-stone-200 text-stone-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 font-semibold text-xs text-amber-950">
+                    <RotateCcw className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>🔄 Test Self-Correction Loop</span>
+                  </div>
+                  <p className="text-[11px] text-stone-600 mt-1 leading-snug">
+                    Attempt 1 drafts with realistic flaws (unexplained jargon, missing non-tech analogy). Evaluator catches them & Attempt 2 fixes them!
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setScenarioMode('retry_limit')}
+                  disabled={isRunning}
+                  className={`p-3 rounded-2xl border text-left transition-all ${
+                    scenarioMode === 'retry_limit'
+                      ? 'bg-rose-50/90 border-rose-500 ring-2 ring-rose-400/50 shadow-xs'
+                      : 'bg-[#FAF8F5] hover:bg-stone-50 border-stone-200 text-stone-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 font-semibold text-xs text-rose-950">
+                    <ShieldAlert className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                    <span>⚠️ Test Retry Safeguard</span>
+                  </div>
+                  <p className="text-[11px] text-stone-600 mt-1 leading-snug">
+                    Simulates persistent university-level barriers over 3 attempts, routing to "Failed Final Lesson" with diagnostic report.
+                  </p>
+                </button>
               </div>
             </div>
 
@@ -1012,8 +1134,8 @@ export default function App() {
             </div>
 
             {/* Modal Nav Tabs */}
-            <div className="flex items-center justify-between px-5 pt-2 border-b border-stone-200 bg-stone-50/60">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-between px-5 pt-2 border-b border-stone-200 bg-stone-50/60 gap-2">
+              <div className="flex items-center gap-1.5 overflow-x-auto">
                 <button
                   type="button"
                   onClick={() => setModalTab('lesson')}
@@ -1025,7 +1147,30 @@ export default function App() {
                 >
                   <FileText className="w-3.5 h-3.5" />
                   <span>Lesson Document</span>
+                  {runResult.iterations.length > 1 && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-stone-200/70 text-stone-700 font-mono">
+                      Att. {currentAttempt?.attempt || 1}
+                    </span>
+                  )}
                 </button>
+
+                {runResult.iterations.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setModalTab('compare')}
+                    className={`px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 ${
+                      modalTab === 'compare'
+                        ? 'border-amber-600 text-amber-900 bg-white rounded-t-lg'
+                        : 'border-transparent text-stone-500 hover:text-stone-800'
+                    }`}
+                  >
+                    <GitCompare className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Compare Attempts</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-mono font-bold">
+                      Diff View
+                    </span>
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -1060,7 +1205,7 @@ export default function App() {
               {/* Attempt Selector if Evaluator triggered regeneration */}
               {runResult.iterations.length > 1 && (
                 <div className="flex items-center gap-1 pb-1">
-                  <span className="text-[11px] text-stone-500 mr-1">Attempt:</span>
+                  <span className="text-[11px] text-stone-500 mr-1 font-medium">Viewing:</span>
                   {runResult.iterations.map((iter, idx) => (
                     <button
                       key={idx}
@@ -1068,7 +1213,7 @@ export default function App() {
                       onClick={() => setSelectedAttemptIndex(idx)}
                       className={`text-xs px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition-all ${
                         selectedAttemptIndex === idx
-                          ? 'bg-amber-600 text-white'
+                          ? 'bg-amber-600 text-white shadow-xs'
                           : 'bg-stone-200 text-stone-700 hover:bg-stone-300'
                       }`}
                     >
@@ -1087,11 +1232,206 @@ export default function App() {
             {/* Modal Body Area */}
             <div className="flex-1 overflow-y-auto p-5 sm:p-6 bg-white space-y-4">
               {/* TAB 1: Lesson Content */}
-              {modalTab === 'lesson' && (
+              {modalTab === 'lesson' && currentAttempt && (
                 <div className="space-y-4">
+                  {/* Status Banner for Currently Selected Attempt */}
+                  {!currentAttempt.passed ? (
+                    <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-300 text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="font-semibold text-amber-950 flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                          <span>Attempt {currentAttempt.attempt} Draft — Rejected by Evaluator Audit</span>
+                        </div>
+                        <span className="text-[10px] font-bold bg-amber-200/90 text-amber-900 px-2 py-0.5 rounded border border-amber-300">
+                          NEEDS REGENERATION
+                        </span>
+                      </div>
+                      <p className="text-stone-700 leading-relaxed">
+                        <strong className="text-stone-900">Evaluator Critique:</strong> {currentAttempt.evaluation.regeneration_feedback}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span className="text-[11px] font-semibold text-amber-900">Failed Quality Criteria:</span>
+                        {currentAttempt.evaluation.failed_checks.map((chkId) => (
+                          <span
+                            key={chkId}
+                            className="px-2 py-0.5 rounded-md bg-amber-100 border border-amber-300 text-[11px] font-medium text-amber-900"
+                          >
+                            {RUBRIC_TITLES[chkId] || chkId}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-2xl bg-emerald-50/90 border border-emerald-300 text-xs flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-emerald-950 font-semibold">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>Attempt {currentAttempt.attempt} Draft — Passed All 8 Quality Criteria</span>
+                      </div>
+                      <span className="text-[10px] font-bold bg-emerald-200/90 text-emerald-900 px-2 py-0.5 rounded border border-emerald-300">
+                        VERIFIED STANDALONE LESSON
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Document Text */}
                   <div className="prose prose-stone max-w-none text-stone-800 text-sm leading-relaxed whitespace-pre-wrap font-sans bg-[#FAF8F5] p-5 sm:p-6 rounded-2xl border border-stone-200/80">
-                    {runResult.finalLesson}
+                    {currentAttempt.lesson || runResult.finalLesson}
                   </div>
+                </div>
+              )}
+
+              {/* TAB: Compare Attempts (Diff / Side-by-Side Evolution) */}
+              {modalTab === 'compare' && runResult.iterations.length > 1 && (
+                <div className="space-y-4">
+                  {/* Pair Selector Controls */}
+                  <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2">
+                      <GitCompare className="w-4 h-4 text-amber-700" />
+                      <span className="font-semibold text-stone-800">Compare Drafts Side-by-Side:</span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-stone-500 text-[11px]">Draft A:</span>
+                        <select
+                          value={compareBaseIndex}
+                          onChange={(e) => setCompareBaseIndex(Number(e.target.value))}
+                          className="bg-white border border-stone-300 rounded-lg px-2.5 py-1 text-xs text-stone-800 font-medium focus:outline-none focus:border-amber-500"
+                        >
+                          {runResult.iterations.map((iter, idx) => (
+                            <option key={idx} value={idx}>
+                              Attempt {iter.attempt} ({iter.passed ? 'Passed' : 'Critique'})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <ArrowRight className="w-3.5 h-3.5 text-stone-400 hidden sm:block" />
+
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-stone-500 text-[11px]">Draft B:</span>
+                        <select
+                          value={compareTargetIndex}
+                          onChange={(e) => setCompareTargetIndex(Number(e.target.value))}
+                          className="bg-white border border-stone-300 rounded-lg px-2.5 py-1 text-xs text-stone-800 font-medium focus:outline-none focus:border-amber-500"
+                        >
+                          {runResult.iterations.map((iter, idx) => (
+                            <option key={idx} value={idx}>
+                              Attempt {iter.attempt} ({iter.passed ? 'Passed' : 'Critique'})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Summary of What Changed */}
+                  {(() => {
+                    const base = runResult.iterations[compareBaseIndex];
+                    const target = runResult.iterations[compareTargetIndex];
+                    if (!base || !target) return null;
+
+                    return (
+                      <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 text-xs space-y-2">
+                        <h4 className="font-semibold text-amber-950 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-700" />
+                          <span>Iterative Workflow Evolution: Attempt {base.attempt} ➔ Attempt {target.attempt}</span>
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                          <div className="p-3 bg-white/80 rounded-xl border border-stone-200 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-stone-800">
+                                Attempt {base.attempt}
+                              </span>
+                              <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                                base.passed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                {base.passed ? 'PASSED 8/8' : 'FAILED AUDIT'}
+                              </span>
+                            </div>
+                            {!base.passed && (
+                              <p className="text-[11px] text-stone-600 leading-snug">
+                                <strong>Feedback:</strong> {base.evaluation.regeneration_feedback}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="p-3 bg-white/80 rounded-xl border border-stone-200 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-stone-800">
+                                Attempt {target.attempt}
+                              </span>
+                              <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                                target.passed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                {target.passed ? 'PASSED 8/8' : 'FAILED AUDIT'}
+                              </span>
+                            </div>
+                            {target.passed ? (
+                              <p className="text-[11px] text-emerald-800 leading-snug font-medium">
+                                Successfully addressed all feedback: Added relatable everyday analogies, defined technical terms, and satisfied beginner 12th-grade standard.
+                              </p>
+                            ) : (
+                              <p className="text-[11px] text-stone-600 leading-snug">
+                                <strong>Feedback:</strong> {target.evaluation.regeneration_feedback}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Side-by-Side Comparison Columns */}
+                  {(() => {
+                    const base = runResult.iterations[compareBaseIndex];
+                    const target = runResult.iterations[compareTargetIndex];
+                    if (!base || !target) return null;
+
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Draft A Column */}
+                        <div className="flex flex-col rounded-2xl border border-stone-200 overflow-hidden bg-[#FAF8F5]">
+                          <div className="p-3 bg-stone-100 border-b border-stone-200 flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <FileText className="w-3.5 h-3.5 text-stone-600" />
+                              <span className="font-semibold text-xs text-stone-800">
+                                Attempt {base.attempt} Draft
+                              </span>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                              base.passed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {base.passed ? 'PASSED' : 'REJECTED'}
+                            </span>
+                          </div>
+                          <div className="p-4 text-xs text-stone-800 leading-relaxed font-sans whitespace-pre-wrap flex-1 max-h-[440px] overflow-y-auto">
+                            {base.lesson}
+                          </div>
+                        </div>
+
+                        {/* Draft B Column */}
+                        <div className="flex flex-col rounded-2xl border border-stone-200 overflow-hidden bg-[#FAF8F5]">
+                          <div className="p-3 bg-stone-100 border-b border-stone-200 flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <FileText className="w-3.5 h-3.5 text-stone-600" />
+                              <span className="font-semibold text-xs text-stone-800">
+                                Attempt {target.attempt} Draft
+                              </span>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                              target.passed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {target.passed ? 'PASSED' : 'REJECTED'}
+                            </span>
+                          </div>
+                          <div className="p-4 text-xs text-stone-800 leading-relaxed font-sans whitespace-pre-wrap flex-1 max-h-[440px] overflow-y-auto">
+                            {target.lesson}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -1108,8 +1448,16 @@ export default function App() {
                       <p className="text-stone-700 leading-relaxed">
                         {currentAttempt.evaluation.regeneration_feedback}
                       </p>
-                      <div className="font-mono text-[11px] text-amber-800 pt-1">
-                        Failed Criteria: [{currentAttempt.evaluation.failed_checks.join(', ')}]
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span className="text-[11px] font-semibold text-amber-900">Failed Criteria:</span>
+                        {currentAttempt.evaluation.failed_checks.map((chkId) => (
+                          <span
+                            key={chkId}
+                            className="px-2 py-0.5 rounded-md bg-amber-100 border border-amber-300 text-[11px] font-medium text-amber-900"
+                          >
+                            {RUBRIC_TITLES[chkId] || chkId}
+                          </span>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -1126,13 +1474,13 @@ export default function App() {
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-semibold capitalize text-stone-900 flex items-center gap-1.5">
+                          <span className="font-semibold text-stone-900 flex items-center gap-1.5">
                             {chk.passed ? (
                               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                             ) : (
                               <XCircle className="w-4 h-4 text-amber-600 shrink-0" />
                             )}
-                            {chk.id.replace(/_/g, ' ')}
+                            {RUBRIC_TITLES[chk.id] || chk.id.replace(/_/g, ' ')}
                           </span>
                           <span
                             className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
