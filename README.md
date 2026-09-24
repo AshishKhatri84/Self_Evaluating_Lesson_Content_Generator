@@ -21,6 +21,23 @@ Originally engineered as an **n8n agentic workflow**, the project now features a
 
 ---
 
+## Workflow Video Walkthrough
+
+A comprehensive video walkthrough demonstrating the workflow architecture, execution paths, and self-correction behavior is available:
+
+📹 **[https://drive.google.com/file/d/15yYll0uGifpvhGQJLQHGvmUfIn4XGkDP/view?usp=drive_link](https://drive.google.com/file/d/15yYll0uGifpvhGQJLQHGvmUfIn4XGkDP/view?usp=drive_link))** 
+
+### Walkthrough Chapters & Demonstration Structure
+
+| Chapter | Topic | What is Demonstrated |
+|---|---|---|
+| **Part 1** | **Architecture & Node Topology** | Tour of the complete n8n canvas: Manual Trigger $\to$ Edit Fields $\to$ Generator $\to$ Store Generated Lesson $\to$ Evaluator $\to$ Structured Output Parser $\to$ If Router $\to$ Retry Limit $\to$ Prepare Regeneration $\to$ Final Lesson / Failed Final Lesson. |
+| **Part 2** | **Successful First-Pass Execution** | Execution with `topic = "Introduction to RAG"`. Demonstrates all 8 rubric checks passing (`overall_pass = true`), routing through the `If (TRUE)` branch, and delivering the verified `Final Lesson` on Attempt 1. |
+| **Part 3** | **Regeneration & Self-Correction Loop** | Demonstrating the self-correction mechanism: Evaluator detects missing analogies and unexplained technical jargon, routing through `Retry Limit` $\to$ `Prepare Regeneration` (`attempt = 2`), prompting the Generator with feedback, and producing a perfected lesson that passes all 8 checks. |
+| **Part 4** | **Retry Limit Safeguard Execution** | Demonstrates the bounded guardrail: persistent failures across 3 iterations safely route to `Failed Final Lesson` with complete diagnostic feedback instead of entering an infinite loop. |
+
+---
+
 ## Key Features
 
 ### 1. Interactive Web Application
