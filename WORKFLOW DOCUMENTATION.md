@@ -1,4 +1,4 @@
-# Self-Evaluating Lesson Content Generator — Technical Documentation
+# Self-Evaluating Lesson Content Generator — Technical Workflow Documentation
 
 ## 1. System Overview
 
