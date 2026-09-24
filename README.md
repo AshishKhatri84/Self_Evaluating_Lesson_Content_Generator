@@ -386,7 +386,7 @@ To prevent denial-of-service or pipeline failure during Google Gemini traffic sp
 │   ├── main.tsx                 # React DOM mount point
 │   └── index.css                # Tailwind CSS global styles
 ├── server.ts                    # Node.js/Express full-stack runner & Gemini agentic pipeline
-├── WORKFLOW DOCUMENTATION.md             # In-depth technical architecture documentation
+├── WORKFLOW DOCUMENTATION.md    # In-depth technical architecture documentation
 ├── Workflow                     # Standalone n8n workflow specification (JSON)
 ├── package.json                 # Project dependencies and npm scripts
 ├── tsconfig.json                # TypeScript compiler configuration
